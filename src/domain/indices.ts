@@ -517,12 +517,21 @@ export function unproductiveEwes(
     const s = stats.get(e.id);
     const reasons: string[] = [];
     if (cat === "descarte") reasons.push("Já classificada como descarte");
-    if (s?.lastBirth) {
-      const d = diffDays(s.lastBirth, refDate);
-      if (d > rules.maxDaysWithoutBirth) reasons.push(`Sem parto há ${d} dias`);
-    } else {
-      const d = diffDays(e.entryDate, refDate);
-      if (d > rules.maxDaysWithoutBirth) reasons.push(`Nenhum parto registrado em ${d} dias no rebanho`);
+    // início da vida reprodutiva no sistema: data em que virou matriz (ou a entrada)
+    const hist = e.categoryHistory?.length ? e.categoryHistory : [{ date: e.entryDate, category: e.category }];
+    const becameEwe = [...hist].sort((x, y) => x.date.localeCompare(y.date)).find((h) => h.category === "matriz")?.date ?? e.entryDate;
+    const lastPreg = pregnancies
+      .filter((p) => p.eweId === e.id && p.date <= refDate && (!s?.lastBirth || p.date > s.lastBirth))
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    const pregnantNow = lastPreg?.result === "prenhe" && diffDays(lastPreg.date, refDate) <= GESTATION_DAYS;
+    if (!pregnantNow) {
+      if (s?.lastBirth) {
+        const d = diffDays(s.lastBirth, refDate);
+        if (d > rules.maxDaysWithoutBirth) reasons.push(`Sem parto há ${d} dias`);
+      } else {
+        const d = diffDays(maxIso(becameEwe, e.entryDate), refDate);
+        if (d > rules.maxDaysWithoutBirth) reasons.push(`Nenhum parto registrado em ${d} dias como matriz`);
+      }
     }
     if (s?.avgInterval && s.avgInterval > rules.maxAvgInterval)
       reasons.push(`Intervalo médio entre partos de ${Math.round(s.avgInterval)} dias`);

@@ -11,7 +11,7 @@ export function toIso(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function isIsoDate(s: unknown): s is string {
+export function isIsoDate(s: unknown): boolean {
   if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const d = toDate(s);
   return !Number.isNaN(d.getTime()) && toIso(d) === s;

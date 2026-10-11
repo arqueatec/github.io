@@ -24,6 +24,8 @@ export interface FinancialEntryRef {
   deletedAt?: Date | string | null;
 }
 
+const br = (iso: string | null) => (iso ? iso.split("-").reverse().join("/") : "");
+
 export class AccessError extends Error {
   status: number;
   constructor(message: string, status = 403) {
@@ -54,7 +56,7 @@ export type Decision = { ok: true } | { ok: false; reason: string };
 export function canCreateFinancial(a: Actor | null | undefined, date: string, lockedUntil: string | null): Decision {
   if (!a || !a.active) return { ok: false, reason: "Usuário não autenticado ou inativo" };
   if (isLocked(date, lockedUntil))
-    return { ok: false, reason: `Período fechado até ${lockedUntil}. Peça ao administrador para reabrir.` };
+    return { ok: false, reason: `Período fechado até ${br(lockedUntil)}. Peça ao administrador para reabrir.` };
   return { ok: true };
 }
 
@@ -68,9 +70,9 @@ export function canModifyFinancial(
   if (entry.deletedAt) return { ok: false, reason: "Lançamento já excluído" };
   if (entry.createdBy !== a.id) return { ok: false, reason: "Só quem criou o lançamento pode alterá-lo ou excluí-lo" };
   if (isLocked(entry.date, lockedUntil))
-    return { ok: false, reason: `Lançamento em período fechado (até ${lockedUntil}). Somente o administrador pode reabrir.` };
+    return { ok: false, reason: `Lançamento em período fechado (até ${br(lockedUntil)}). Somente o administrador pode reabrir.` };
   if (newDate && isLocked(newDate, lockedUntil))
-    return { ok: false, reason: `A nova data cai em período fechado (até ${lockedUntil}).` };
+    return { ok: false, reason: `A nova data cai em período fechado (até ${br(lockedUntil)}).` };
   return { ok: true };
 }
 
@@ -95,7 +97,7 @@ export function canClosePeriod(a: Actor | null | undefined) {
 export function canSetShareFrom(a: Actor | null | undefined, validFrom: string, lockedUntil: string | null): Decision {
   if (!isAdmin(a)) return { ok: false, reason: "Somente o administrador altera os percentuais" };
   if (isLocked(validFrom, lockedUntil))
-    return { ok: false, reason: `A vigência não pode começar em período já fechado (até ${lockedUntil})` };
+    return { ok: false, reason: `A vigência não pode começar em período já fechado (até ${br(lockedUntil)})` };
   return { ok: true };
 }
 

@@ -131,7 +131,7 @@ export async function listWeighings(db: Exec, animalId?: number) {
 
 /**
  * Alertas: próximas doses (vencidas ou nos próximos `days` dias, sem aplicação posterior do
- * mesmo produto), partos previstos e carências ativas.
+ * mesmo produto — ou de qualquer vermífugo, já que há rodízio de princípios ativos), partos previstos e carências ativas.
  */
 export async function getAlerts(db: Exec, refDate = todayIso(), days = 30) {
   const doses = await db
@@ -155,7 +155,7 @@ export async function getAlerts(db: Exec, refDate = todayIso(), days = 30) {
           select 1 from health_events h2
           where h2.animal_id = ${healthEvents.animalId}
             and h2.type = ${healthEvents.type}
-            and coalesce(h2.product,'') = coalesce(${healthEvents.product},'')
+            and (h2.type = 'vermifugacao' or coalesce(h2.product,'') = coalesce(${healthEvents.product},''))
             and h2.date > ${healthEvents.date}
         )`,
       ),

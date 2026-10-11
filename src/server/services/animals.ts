@@ -15,7 +15,7 @@ import {
   weighings,
   users,
 } from "@/db/schema";
-import { birthFromAgeMonths, todayIso } from "@/domain/dates";
+import { birthFromAgeMonths, formatDateBR, todayIso } from "@/domain/dates";
 import { assert, canWriteHerd, type Actor } from "@/domain/policy";
 import { animalCreateSchema, animalUpdateSchema, type AnimalCreate } from "@/lib/schemas";
 import { AppError, ConflictError, NotFoundError, isUniqueViolation } from "../errors";
@@ -318,8 +318,8 @@ export async function animalTimeline(db: Exec, id: number): Promise<TimelineItem
       detail: [
         h.dose && `dose ${h.dose}`,
         h.famacha && `FAMACHA ${h.famacha}`,
-        h.withdrawalUntil && `carência até ${h.withdrawalUntil}`,
-        h.nextDoseDate && `próxima dose ${h.nextDoseDate}`,
+        h.withdrawalUntil && `carência até ${formatDateBR(h.withdrawalUntil)}`,
+        h.nextDoseDate && `próxima dose ${formatDateBR(h.nextDoseDate)}`,
         h.notes,
       ]
         .filter(Boolean)

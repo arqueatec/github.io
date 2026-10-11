@@ -215,4 +215,22 @@ describe("matrizes", () => {
     expect(byId.has(1)).toBe(true); // sem parto há > 365 dias em 2026-06-01
     expect(unproductiveEwes(ewes, map, [], "2025-12-31").map((c) => c.eweId)).toEqual([4]);
   });
+  it("matriz prenhe não é marcada como sem parto", () => {
+    const stats = new Map(ewes.map((e) => [e.id, eweStats(e, all, births, weanings, exits, "2026-06-01")]));
+    const u = unproductiveEwes(ewes, stats, [{ eweId: 1, date: "2026-05-01", result: "prenhe" }], "2026-06-01");
+    expect(u.find((c) => c.eweId === 1)).toBeUndefined();
+  });
+  it("borrega promovida a matriz conta o prazo a partir da promoção", () => {
+    const young = animal(300, {
+      entryDate: "2025-01-01",
+      birthDate: "2025-01-01",
+      categoryHistory: [
+        { date: "2025-01-01", category: "cordeiro" },
+        { date: "2026-01-15", category: "matriz" },
+      ],
+    });
+    const st = new Map([[300, eweStats(young, [young], [], [], [], "2026-10-01")]]);
+    expect(unproductiveEwes([young], st, [], "2026-10-01")).toEqual([]);
+    expect(unproductiveEwes([young], st, [], "2027-02-01")[0].reasons[0]).toMatch(/como matriz/);
+  });
 });
