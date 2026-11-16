@@ -22,10 +22,10 @@ export async function setSetting(db: Exec, key: string, value: unknown) {
 export async function inventoryProgress(db: Exec) {
   const target = await getSetting<number>(db, "inventory_target", 50);
   const rows = await db
-    .select({ category: animals.category, sex: animals.sex, n: sql<number>`count(*)::int` })
+    .select({ species: animals.species, category: animals.category, sex: animals.sex, n: sql<number>`count(*)::int` })
     .from(animals)
     .where(eq(animals.status, "ativo"))
-    .groupBy(animals.category, animals.sex);
+    .groupBy(animals.species, animals.category, animals.sex);
   const [{ unknownBirth }] = await db
     .select({ unknownBirth: sql<number>`count(*) filter (where ${animals.birthDate} is null)::int` })
     .from(animals)
@@ -35,7 +35,11 @@ export async function inventoryProgress(db: Exec) {
     .from(animals)
     .where(and(eq(animals.status, "ativo"), eq(animals.origin, "inventario")));
   const total = rows.reduce((s, r) => s + r.n, 0);
-  return { target, total, inventoried, unknownBirth, byCategory: rows };
+  const bySpecies = {
+    ovino: rows.filter((r) => r.species === "ovino").reduce((s, r) => s + r.n, 0),
+    bovino: rows.filter((r) => r.species === "bovino").reduce((s, r) => s + r.n, 0),
+  };
+  return { target, total, inventoried, unknownBirth, byCategory: rows, bySpecies };
 }
 
 export async function createCount(db: DB, actor: Actor, raw: unknown) {

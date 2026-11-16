@@ -4,6 +4,7 @@ import type { DB } from "@/db";
 import { animals, lots } from "@/db/schema";
 import { isIsoDate, todayIso } from "@/domain/dates";
 import { assert, canWriteHerd, type Actor } from "@/domain/policy";
+import { categoriesFor } from "@/domain/species";
 import { animalCreateSchema, CATEGORY } from "@/lib/schemas";
 import { AppError } from "../errors";
 import { audit } from "./audit";
@@ -76,6 +77,7 @@ export async function toPdf(title: string, subtitle: string, sections: { heading
 export interface ImportRow {
   line: number;
   tag: string;
+  species: "ovino" | "bovino";
   sex: "M" | "F" | null;
   category: string | null;
   breed: string | null;
@@ -98,6 +100,7 @@ const norm = (s: string) =>
 
 const HEADER_ALIASES: Record<string, string[]> = {
   tag: ["brinco", "tag", "numero", "n", "id", "identificacao"],
+  species: ["especie", "especies", "species", "tipoanimal"],
   sex: ["sexo", "sex"],
   category: ["categoria", "category", "tipo"],
   breed: ["raca", "breed"],
@@ -130,15 +133,36 @@ function parseSex(v: string): "M" | "F" | null {
   return null;
 }
 
+function parseSpecies(v: string): "ovino" | "bovino" | null {
+  const s = norm(v);
+  if (!s) return null;
+  if (["ovino", "ovinos", "ovelha", "ovelhas", "ovp", "ovis", "o"].includes(s) || s.startsWith("ovelh")) return "ovino";
+  if (["bovino", "bovinos", "gado", "boi", "vaca", "b", "g"].includes(s) || s.startsWith("bovin") || s.startsWith("gad")) return "bovino";
+  return null;
+}
+
 function parseCategory(v: string): string | null {
   const s = norm(v);
   if (!s) return null;
+  // ovinos
   if (s.startsWith("matriz") || s === "ovelha") return "matriz";
   if (s.startsWith("reprod") || s === "carneiro") return "reprodutor";
   if (s.startsWith("cordeir")) return "cordeiro";
   if (s.startsWith("borreg")) return "borrego";
+  // bovinos
+  if (s.startsWith("vaca")) return "vaca";
+  if (s.startsWith("touro")) return "touro";
+  if (s.startsWith("bezerr")) return "bezerro";
+  if (s.startsWith("novilh")) return "novilho";
+  if (s.startsWith("garrot")) return "garrote";
+  if (s === "boi" || s === "bois" || s.startsWith("boigord")) return "boi";
   if (s.startsWith("descarte")) return "descarte";
   return (CATEGORY as readonly string[]).includes(s) ? s : "invalid";
+}
+
+/** Espécie de uma categoria bovina conhecida (para inferir quando a coluna espécie falta). */
+function speciesFromCategory(cat: string | null): "ovino" | "bovino" {
+  return ["vaca", "touro", "bezerro", "novilho", "garrote", "boi"].includes(cat ?? "") ? "bovino" : "ovino";
 }
 
 /** Lê CSV (separador ; ou ,) ou XLSX e devolve linhas normalizadas com erros por linha. */
@@ -193,6 +217,22 @@ export async function parseHerdSheet(file: { name: string; buffer: Buffer }): Pr
     const category = parseCategory(get("category"));
     if (!category) errors.push("Categoria vazia");
     else if (category === "invalid") errors.push("Categoria inválida");
+    const rawSpecies = get("species");
+    let species: "ovino" | "bovino";
+    if (rawSpecies) {
+      const parsed = parseSpecies(rawSpecies);
+      if (!parsed) {
+        errors.push("Espécie inválida (use ovino/ovelha ou bovino/gado)");
+        species = speciesFromCategory(category === "invalid" ? null : category);
+      } else {
+        species = parsed;
+      }
+    } else {
+      species = speciesFromCategory(category === "invalid" ? null : category);
+    }
+    const catOk = category && category !== "invalid";
+    if (catOk && !categoriesFor(species).includes(category as never))
+      errors.push(`Categoria "${category}" não é de ${species === "bovino" ? "gado" : "ovelha"}`);
     const bd = parseDateCell(get("birthDate"));
     if (bd === "invalid") errors.push("Data de nascimento inválida");
     const ed = parseDateCell(get("entryDate"));
@@ -203,6 +243,7 @@ export async function parseHerdSheet(file: { name: string; buffer: Buffer }): Pr
     return {
       line: i + 2,
       tag,
+      species,
       sex,
       category: category === "invalid" ? null : category,
       breed: get("breed") || null,
@@ -234,7 +275,7 @@ export async function previewImport(db: DB, rows: ImportRow[]) {
       if (!a) r.errors.push(`${label} ${t} não encontrado(a)`);
       else if (a.sex !== sex) r.errors.push(`${label} ${t} com sexo incompatível`);
     }
-    const parsed = animalCreateSchema.safeParse({ tag: r.tag, sex: r.sex, category: r.category, breed: r.breed });
+    const parsed = animalCreateSchema.safeParse({ tag: r.tag, species: r.species, sex: r.sex, category: r.category, breed: r.breed });
     if (!parsed.success) for (const iss of parsed.error.issues) if (!r.errors.includes(iss.message)) r.errors.push(iss.message);
   }
   return { rows, valid: rows.filter((r) => !r.errors.length).length, invalid: rows.filter((r) => r.errors.length).length };
@@ -255,6 +296,7 @@ export async function commitImport(db: DB, actor: Actor, rows: ImportRow[]) {
     for (const r of rows) {
       const a = await insertAnimal(tx, actor, {
         tag: r.tag,
+        species: r.species,
         sex: r.sex!,
         category: r.category as (typeof CATEGORY)[number],
         breed: r.breed,
@@ -282,6 +324,8 @@ export async function commitImport(db: DB, actor: Actor, rows: ImportRow[]) {
 }
 
 export const IMPORT_TEMPLATE =
-  "﻿brinco;sexo;categoria;raca;nascimento;idade_meses;mae;pai;lote;entrada;observacoes\n" +
-  "101;F;matriz;Santa Inês;;36;;;Piquete 1;;Idade estimada\n" +
-  "102;F;borrego;Dorper;15/03/2025;;101;R1;Piquete 1;;\n";
+  "﻿brinco;especie;sexo;categoria;raca;nascimento;idade_meses;mae;pai;lote;entrada;observacoes\n" +
+  "101;ovino;F;matriz;Santa Inês;;36;;;Piquete 1;;Idade estimada\n" +
+  "102;ovino;F;borrego;Dorper;15/03/2025;;101;R1;Piquete 1;;\n" +
+  "V01;bovino;F;vaca;Nelore;;48;;;Pasto 1;;\n" +
+  "B01;bovino;M;bezerro;Nelore;10/02/2026;;V01;;Pasto 1;;\n";

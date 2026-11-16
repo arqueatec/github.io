@@ -5,11 +5,14 @@
  * (exibida na interface) e observações sobre completude do histórico.
  */
 import { addDays, diffDays, maxIso, minIso } from "./dates";
+import { ALL_CATEGORIES, SPECIES_CONFIG, isAdultCategory, type Category, type Species } from "./species";
 
-export type Category = "matriz" | "reprodutor" | "cordeiro" | "borrego" | "descarte";
-export const CATEGORIES: Category[] = ["matriz", "reprodutor", "cordeiro", "borrego", "descarte"];
+export type { Category, Species };
+export const CATEGORIES = ALL_CATEGORIES;
+/** Mantido para ovinos; a mortalidade de adultos usa `isAdultCategory` por espécie. */
 export const ADULT_CATEGORIES: Category[] = ["matriz", "reprodutor", "descarte"];
 
+/** Gestação padrão (ovino). Para bovino passe `gestationDays` às funções que o aceitam. */
 export const GESTATION_DAYS = 150;
 
 export interface Period {
@@ -20,6 +23,7 @@ export interface Period {
 export interface AnimalRec {
   id: number;
   tag: string;
+  species: Species;
   sex: "M" | "F";
   category: Category;
   status: string;
@@ -105,8 +109,11 @@ export function presentDuring(a: AnimalRec, p: Period): boolean {
   return a.entryDate <= p.end && (!a.exitDate || a.exitDate >= p.start);
 }
 
-export function herdByCategory(animals: AnimalRec[], date: string): Record<Category, number> & { total: number } {
-  const out = { matriz: 0, reprodutor: 0, cordeiro: 0, borrego: 0, descarte: 0, total: 0 };
+export type HerdCounts = Record<Category, number> & { total: number };
+
+export function herdByCategory(animals: AnimalRec[], date: string): HerdCounts {
+  const out = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as HerdCounts;
+  out.total = 0;
   for (const a of animals) {
     if (!presentOn(a, date)) continue;
     out[categoryAt(a, date)]++;
@@ -173,20 +180,20 @@ const inPeriod = (d: string, p: Period) => d >= p.start && d <= p.end;
  * (cobertura + 150 dias) cai no período, somadas às que pariram no período sem
  * cobertura registrada (ex.: animais do inventário inicial).
  */
-export function exposedEwes(breedings: BreedingRec[], births: BirthRec[], p: Period): Set<number> {
+export function exposedEwes(breedings: BreedingRec[], births: BirthRec[], p: Period, gestationDays = GESTATION_DAYS): Set<number> {
   const s = new Set<number>();
-  for (const b of breedings) if (inPeriod(addDays(b.date, GESTATION_DAYS), p)) s.add(b.eweId);
+  for (const b of breedings) if (inPeriod(addDays(b.date, gestationDays), p)) s.add(b.eweId);
   for (const b of births) if (inPeriod(b.date, p)) s.add(b.eweId);
   return s;
 }
 
-const EXPOSED_DEF =
-  "Matrizes expostas = matrizes com cobertura cuja previsão de parto (cobertura + 150 dias) cai no período, mais as que pariram no período sem cobertura registrada.";
+const exposedDef = (gestationDays: number) =>
+  `Matrizes expostas = matrizes com cobertura cuja previsão de parto (cobertura + ${gestationDays} dias) cai no período, mais as que pariram no período sem cobertura registrada.`;
 
-export function birthRate(breedings: BreedingRec[], births: BirthRec[], p: Period): Indicator {
-  const exposed = exposedEwes(breedings, births, p);
+export function birthRate(breedings: BreedingRec[], births: BirthRec[], p: Period, gestationDays = GESTATION_DAYS): Indicator {
+  const exposed = exposedEwes(breedings, births, p, gestationDays);
   const born = births.filter((b) => inPeriod(b.date, p)).reduce((s, b) => s + b.bornAlive + b.bornDead, 0);
-  const notes = [EXPOSED_DEF];
+  const notes = [exposedDef(gestationDays)];
   if (!breedings.length) notes.push("Sem coberturas registradas: só entram como expostas as matrizes que pariram (índice superestimado).");
   return {
     key: "natalidade",
@@ -200,10 +207,10 @@ export function birthRate(breedings: BreedingRec[], births: BirthRec[], p: Perio
   };
 }
 
-export function lambingRate(breedings: BreedingRec[], births: BirthRec[], p: Period): Indicator {
-  const exposed = exposedEwes(breedings, births, p);
+export function lambingRate(breedings: BreedingRec[], births: BirthRec[], p: Period, gestationDays = GESTATION_DAYS): Indicator {
+  const exposed = exposedEwes(breedings, births, p, gestationDays);
   const lambed = new Set(births.filter((b) => inPeriod(b.date, p)).map((b) => b.eweId));
-  const notes = [EXPOSED_DEF];
+  const notes = [exposedDef(gestationDays)];
   if (!breedings.length) notes.push("Sem coberturas registradas: o índice tende a 100% e não é confiável.");
   return {
     key: "paricao",
@@ -285,8 +292,13 @@ export function herdBirthInterval(births: BirthRec[], p: Period): Indicator {
   };
 }
 
-export function birthsPerEwePerYear(animals: AnimalRec[], births: BirthRec[], p: Period): Indicator {
-  const eweYears = animalDays(animals, p, "matriz") / 365;
+export function birthsPerEwePerYear(
+  animals: AnimalRec[],
+  births: BirthRec[],
+  p: Period,
+  femaleCategory: Category = "matriz",
+): Indicator {
+  const eweYears = animalDays(animals, p, femaleCategory) / 365;
   const n = births.filter((b) => inPeriod(b.date, p)).length;
   return {
     key: "partos_matriz_ano",
@@ -312,12 +324,12 @@ export function mortality(animals: AnimalRec[], exits: ExitRec[], p: Period) {
   const byId = new Map(animals.map((a) => [a.id, a]));
   const atRisk = animals.filter((a) => presentDuring(a, p));
   const isAdultIn = (a: AnimalRec) =>
-    ADULT_CATEGORIES.includes(categoryAt(a, minIso(p.end, a.exitDate ?? p.end))) ||
-    ADULT_CATEGORIES.includes(categoryAt(a, maxIso(p.start, a.entryDate)));
+    isAdultCategory(a.species, categoryAt(a, minIso(p.end, a.exitDate ?? p.end))) ||
+    isAdultCategory(a.species, categoryAt(a, maxIso(p.start, a.entryDate)));
   const adultsAtRisk = atRisk.filter(isAdultIn);
   const adultDeaths = deaths.filter((d) => {
     const a = byId.get(d.animalId);
-    return a && ADULT_CATEGORIES.includes(categoryAt(a, d.date));
+    return a && isAdultCategory(a.species, categoryAt(a, d.date));
   });
   const causes = new Map<string, number>();
   for (const d of deaths) {
@@ -378,7 +390,7 @@ export function preWeaningMortality(
     notes.push(`${bornAlive - registered} cria(s) nascida(s) viva(s) sem brinco cadastrado — não é possível saber se morreram.`);
   return {
     key: "mortalidade_cordeiros",
-    label: "Mortalidade de cordeiros até o desmame",
+    label: "Mortalidade de crias até o desmame",
     value: ratio(died, bornAlive, true),
     unit: "%",
     numerator: died,
@@ -508,22 +520,24 @@ export function unproductiveEwes(
   pregnancies: PregnancyRec[],
   refDate: string,
   rules = UNPRODUCTIVE_RULES,
+  gestationDays = GESTATION_DAYS,
 ): UnproductiveCandidate[] {
   const out: UnproductiveCandidate[] = [];
   for (const e of ewes) {
     if (e.status !== "ativo" || e.sex !== "F") continue;
+    const femaleAdult = SPECIES_CONFIG[e.species].femaleAdult;
     const cat = categoryAt(e, refDate);
-    if (cat !== "matriz" && cat !== "descarte") continue;
+    if (cat !== femaleAdult && cat !== "descarte") continue;
     const s = stats.get(e.id);
     const reasons: string[] = [];
     if (cat === "descarte") reasons.push("Já classificada como descarte");
-    // início da vida reprodutiva no sistema: data em que virou matriz (ou a entrada)
+    // início da vida reprodutiva no sistema: data em que virou matriz/vaca (ou a entrada)
     const hist = e.categoryHistory?.length ? e.categoryHistory : [{ date: e.entryDate, category: e.category }];
-    const becameEwe = [...hist].sort((x, y) => x.date.localeCompare(y.date)).find((h) => h.category === "matriz")?.date ?? e.entryDate;
+    const becameEwe = [...hist].sort((x, y) => x.date.localeCompare(y.date)).find((h) => h.category === femaleAdult)?.date ?? e.entryDate;
     const lastPreg = pregnancies
       .filter((p) => p.eweId === e.id && p.date <= refDate && (!s?.lastBirth || p.date > s.lastBirth))
       .sort((a, b) => b.date.localeCompare(a.date))[0];
-    const pregnantNow = lastPreg?.result === "prenhe" && diffDays(lastPreg.date, refDate) <= GESTATION_DAYS;
+    const pregnantNow = lastPreg?.result === "prenhe" && diffDays(lastPreg.date, refDate) <= gestationDays;
     if (!pregnantNow) {
       if (s?.lastBirth) {
         const d = diffDays(s.lastBirth, refDate);
@@ -557,8 +571,8 @@ export function rankEwes(stats: EweStats[]): EweStats[] {
 }
 
 /** Previsão de parto a partir da cobertura. */
-export function expectedBirthDate(breedingDate: string): string {
-  return addDays(breedingDate, GESTATION_DAYS);
+export function expectedBirthDate(breedingDate: string, gestationDays = GESTATION_DAYS): string {
+  return addDays(breedingDate, gestationDays);
 }
 
 // ---------------------------------------------------------------- Custos

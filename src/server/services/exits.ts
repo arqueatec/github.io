@@ -103,12 +103,15 @@ export async function registerSale(db: DB, actor: Actor, raw: unknown) {
         .where(and(eq(categories.kind, "receita"), sql`lower(${categories.name}) like 'venda de animais%'`))
         .limit(1);
       if (!cat) throw new AppError("Categoria de receita 'Venda de animais' não encontrada");
+      const speciesSet = new Set(priced.map((p) => p.a.species));
+      const saleSpecies = speciesSet.size === 1 ? ([...speciesSet][0] as "ovino" | "bovino") : "ambos";
       revenueId = await insertRevenue(tx, actor, {
         date: input.date,
         amountCents: totalCents,
         categoryId: cat.id,
         description: `Venda de ${priced.length} animal(is) para ${input.buyer}: ${priced.map((p) => p.a.tag).join(", ")}`,
         receivedByUserId: input.receivedByUserId ?? actor.id,
+        species: saleSpecies,
       });
     }
     const exitIds: number[] = [];

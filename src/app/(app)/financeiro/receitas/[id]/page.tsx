@@ -21,7 +21,7 @@ export default async function EditarReceita({ params }: { params: Promise<{ id: 
           kind="receita"
           currentUserId={user.id}
           {...ctx}
-          initial={{ id: r.id, date: r.date, amountCents: r.amountCents, categoryId: r.categoryId, description: r.description, userId: r.receivedByUserId, lotId: r.lotId, receiptId: r.receiptId }}
+          initial={{ id: r.id, date: r.date, amountCents: r.amountCents, categoryId: r.categoryId, description: r.description, userId: r.receivedByUserId, species: r.species, lotId: r.lotId, receiptId: r.receiptId }}
         />
       ) : (
         <p className="card text-sm">{can.reason}</p>

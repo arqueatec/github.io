@@ -290,15 +290,18 @@ async function main() {
     await registerExit(db, A, { tag: "M022", type: "abate", date: "2026-03-15", cause: "Descarte por idade", weightKg: 48, ignoreWithdrawal: true });
   }, 7);
 
-  // ---- ajusta o efetivo final para 50 animais ativos vendendo o excedente da estação 2025/2
-  at(addDays(TODAY, -21), "venda final para fechar 50 animais", async () => {
-    const [{ active }] = await db.select({ active: sql<number>`count(*)::int` }).from(animals).where(eq(animals.status, "ativo"));
+  // ---- ajusta o efetivo final de OVINOS para 50 animais ativos vendendo o excedente da estação 2025/2
+  at(addDays(TODAY, -21), "venda final para fechar 50 ovinos", async () => {
+    const [{ active }] = await db
+      .select({ active: sql<number>`count(*)::int` })
+      .from(animals)
+      .where(sql`${animals.status} = 'ativo' and ${animals.species} = 'ovino'`);
     const excess = active - 50;
     if (excess <= 0) return;
     const cands = await db
       .select({ tag: animals.tag, sex: animals.sex })
       .from(animals)
-      .where(sql`${animals.status} = 'ativo' and ${animals.category} in ('borrego','cordeiro') and ${animals.origin} = 'nascimento'`)
+      .where(sql`${animals.status} = 'ativo' and ${animals.species} = 'ovino' and ${animals.category} in ('borrego','cordeiro') and ${animals.origin} = 'nascimento'`)
       .orderBy(sql`${animals.sex} desc`, animals.birthDate);
     const sell = cands.slice(0, excess).map((c) => ({ tag: c.tag, weightKg: Math.round((28 + rand() * 8) * 10) / 10 }));
     if (!sell.length) return;
@@ -308,6 +311,90 @@ async function main() {
       priceMode: "cabeca",
       unitPriceCents: 42000,
       items: sell,
+      createRevenue: true,
+      receivedByUserId: B1.id,
+      ignoreWithdrawal: true,
+    });
+  }, 9);
+
+  // ---- GADO (bovino): touro + vacas, cobertura, partos, desmames, sanidade, despesas e venda
+  const cattleExpense = (date: string, who: Actor, category: string, cents: number, description: string) =>
+    expense(date, who, category, cents, description, { species: "bovino" });
+  const vacaTags = Array.from({ length: 7 }, (_, i) => `G${String(i + 1).padStart(2, "0")}`);
+  const bezerroTags: string[] = [];
+  let bezSeq = 0;
+  cattleExpense("2024-06-15", A, "Compra de animais", 850000, "Compra do touro Nelore");
+  expense("2024-06-15", B1, "Transporte", 60000, "Frete do touro", { species: "bovino" });
+  at("2024-06-15", "gado: touro e vacas", async () => {
+    const [lg] = await db.insert(lots).values({ name: "Pasto do gado", description: "Bovinos" }).returning();
+    await createAnimal(db, A, { tag: "GT1", species: "bovino", sex: "M", breed: "Nelore", ageMonths: 48, category: "touro", origin: "compra", entryDate: "2024-06-15", lotId: lg.id });
+    for (const t of vacaTags) {
+      await createAnimal(db, A, {
+        tag: t,
+        species: "bovino",
+        sex: "F",
+        breed: pick(["Nelore", "Girolando", "Gir", "Nelore"]),
+        ageMonths: between(40, 90),
+        category: "vaca",
+        origin: "inventario",
+        entryDate: "2024-07-01",
+        lotId: lg.id,
+        notes: "Vaca do inventário inicial",
+      });
+    }
+  }, 0);
+  at("2024-09-20", "gado: cobertura", async () => {
+    await createBreedings(db, A, { eweTags: vacaTags, ramTag: "GT1", date: "2024-09-20", endDate: "2024-11-05", seasonName: "Monta do gado 2024" });
+    vacaTags.forEach((t, i) => {
+      if (i >= 6) return; // 6 de 7 emprenham
+      const bd = addDays("2024-09-20", between(280, 291));
+      at(bd, `gado parto ${t}`, async () => {
+        const yy = bd.slice(2, 4);
+        const calf = `G${yy}-${String(++bezSeq).padStart(2, "0")}`;
+        await createBirth(db, pick(people), {
+          eweTag: t,
+          date: bd,
+          bornAlive: 1,
+          bornDead: 0,
+          birthType: chance(0.1) ? "assistido" : "normal",
+          lambs: [{ tag: calf, sex: chance(0.5) ? "M" : "F", weightKg: Math.round((28 + rand() * 10) * 10) / 10 }],
+        });
+        bezerroTags.push(calf);
+        const wd = addDays(bd, between(205, 240));
+        at(wd, `gado desmame ${calf}`, async () => {
+          await createWeanings(db, pick(people), { date: wd, items: [{ tag: calf, weightKg: Math.round(170 + rand() * 60) }] });
+        });
+      });
+    });
+  }, 0);
+  // vacinas de aftosa (campanhas) e sal mineral do gado
+  for (const [date, cents] of [["2024-11-01", 48000], ["2025-05-01", 52000], ["2025-11-01", 50000], ["2026-05-01", 54000]] as const) {
+    at(date, `gado: vacina aftosa ${date}`, async () => {
+      const act = await db
+        .select({ tag: animals.tag })
+        .from(animals)
+        .where(sql`${animals.species} = 'bovino' and ${animals.status} = 'ativo' and ${animals.entryDate} <= ${date}`);
+      if (act.length) await createHealthEvents(db, A, { type: "vacina", date, product: "Aftosa", dose: "5 ml SC", nextDoseDate: addDays(date, 180), items: act.map((a) => ({ tag: a.tag })) });
+    }, 3);
+    cattleExpense(date, A, "Medicamentos", cents, "Vacina de aftosa (gado)");
+  }
+  cattleExpense("2025-03-10", B2, "Ração/sal mineral", 120000, "Sal mineral proteinado (gado)");
+  cattleExpense("2026-03-10", B2, "Ração/sal mineral", 138000, "Sal mineral proteinado (gado)");
+  cattleExpense("2026-07-15", B1, "Veterinário", 45000, "Diagnóstico de gestação das vacas");
+  at(addDays(TODAY, -30), "gado: venda de novilhos", async () => {
+    const cands = await db
+      .select({ tag: animals.tag })
+      .from(animals)
+      .where(sql`${animals.species} = 'bovino' and ${animals.status} = 'ativo' and ${animals.category} in ('novilho', 'garrote')`)
+      .orderBy(animals.birthDate)
+      .limit(2);
+    if (!cands.length) return;
+    await registerSale(db, B1, {
+      date: addDays(TODAY, -30),
+      buyer: "Fazenda Boi Gordo",
+      priceMode: "cabeca",
+      unitPriceCents: 420000,
+      items: cands.map((c) => ({ tag: c.tag })),
       createRevenue: true,
       receivedByUserId: B1.id,
       ignoreWithdrawal: true,
@@ -332,7 +419,7 @@ async function main() {
         items: act.map((a) => ({ tag: a.tag, famacha: chance(0.7) ? pick([1, 2, 2, 3, 3, 4, 5]) : null })),
       });
     }, 3);
-    expense(date, pick(people), "Medicamentos", between(18000, 42000), `Vermífugo ${product}`);
+    expense(date, pick(people), "Medicamentos", between(18000, 42000), `Vermífugo ${product}`, { species: "ovino" });
   }
   for (const date of ["2024-10-26", "2025-10-26"]) {
     at(date, `vacina ${date}`, async () => {
@@ -346,7 +433,7 @@ async function main() {
         items: act.map((a) => ({ tag: a.tag })),
       });
     }, 3);
-    expense(date, A, "Medicamentos", 26000, "Vacina polivalente clostridioses (frasco 50 doses)");
+    expense(date, A, "Medicamentos", 26000, "Vacina polivalente clostridioses (frasco 50 doses)", { species: "ovino" });
   }
   at(addDays(TODAY, -8), "tratamento recente", async () => {
     await createHealthEvents(db, B2, {

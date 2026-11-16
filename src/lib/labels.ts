@@ -1,13 +1,30 @@
+export const SPECIES_LABEL: Record<string, string> = { ovino: "Ovino", bovino: "Bovino" };
+export const SPECIES_HERD_LABEL: Record<string, string> = { ovino: "Ovelhas", bovino: "Gado" };
+export const FINANCE_SPECIES_LABEL: Record<string, string> = { ovino: "Ovelhas", bovino: "Gado", ambos: "Geral (ambos)" };
+
 export const CATEGORY_LABEL: Record<string, string> = {
+  // ovinos
   matriz: "Matriz",
   reprodutor: "Reprodutor",
   cordeiro: "Cordeiro(a)",
   borrego: "Borrego(a)",
   descarte: "Descarte",
+  // bovinos
+  vaca: "Vaca",
+  touro: "Touro",
+  bezerro: "Bezerro(a)",
+  novilho: "Novilho(a)",
+  garrote: "Garrote",
+  boi: "Boi",
+};
+const SEX_CATEGORY: Record<string, { F: string; M: string }> = {
+  cordeiro: { F: "Cordeira", M: "Cordeiro" },
+  borrego: { F: "Borrega", M: "Borrego" },
+  bezerro: { F: "Bezerra", M: "Bezerro" },
+  novilho: { F: "Novilha", M: "Novilho" },
 };
 export function categoryLabel(cat: string, sex?: "M" | "F") {
-  if (sex && cat === "cordeiro") return sex === "F" ? "Cordeira" : "Cordeiro";
-  if (sex && cat === "borrego") return sex === "F" ? "Borrega" : "Borrego";
+  if (sex && SEX_CATEGORY[cat]) return SEX_CATEGORY[cat][sex];
   return CATEGORY_LABEL[cat] ?? cat;
 }
 export const STATUS_LABEL: Record<string, string> = {

@@ -67,6 +67,7 @@ export async function createExpense(db: DB, actor: Actor, raw: unknown): Promise
         description: input.description ?? null,
         paidByUserId: payer.id,
         party: payer.party,
+        species: input.species ?? "ambos",
         animalId: await resolveAnimalTag(tx, input.animalTag),
         lotId: await requireLot(tx, input.lotId),
         receiptId: await saveAttachment(tx, input.receipt, actor.id),
@@ -101,6 +102,7 @@ export async function updateExpense(db: DB, actor: Actor, id: number, raw: unkno
       patch.paidByUserId = payer.id;
       patch.party = payer.party;
     }
+    if (input.species) patch.species = input.species;
     if (input.animalTag !== undefined) patch.animalId = await resolveAnimalTag(tx, input.animalTag);
     if (input.lotId !== undefined) patch.lotId = await requireLot(tx, input.lotId);
     if (input.receipt) patch.receiptId = await saveAttachment(tx, input.receipt, actor.id);
@@ -154,6 +156,7 @@ export async function insertRevenue(
     categoryId: number;
     description?: string | null;
     receivedByUserId: number;
+    species?: "ovino" | "bovino" | "ambos";
     lotId?: number | null;
     receipt?: { mime: string; base64: string } | null;
   },
@@ -171,6 +174,7 @@ export async function insertRevenue(
       description: input.description ?? null,
       receivedByUserId: receiver.id,
       party: receiver.party,
+      species: input.species ?? "ambos",
       lotId: await requireLot(tx, input.lotId),
       receiptId: await saveAttachment(tx, input.receipt, actor.id),
       createdBy: actor.id,
@@ -196,6 +200,7 @@ export async function updateRevenue(db: DB, actor: Actor, id: number, raw: unkno
       patch.receivedByUserId = r.id;
       patch.party = r.party;
     }
+    if (input.species) patch.species = input.species;
     if (input.lotId !== undefined) patch.lotId = await requireLot(tx, input.lotId);
     if (input.receipt) patch.receiptId = await saveAttachment(tx, input.receipt, actor.id);
     else if (input.removeReceipt) patch.receiptId = null;
@@ -305,6 +310,10 @@ export interface FinanceFilter {
   party?: Party | null;
   lotId?: number | null;
   categoryId?: number | null;
+  /** Visão por espécie: inclui lançamentos da espécie E os marcados "ambos" (geral). */
+  species?: "ovino" | "bovino" | null;
+  /** Filtro exato de espécie (ovino, bovino ou ambos), sem incluir "ambos" junto. */
+  speciesExact?: "ovino" | "bovino" | "ambos" | null;
 }
 
 function dateConds(col: typeof expenses.date | typeof revenues.date | typeof reimbursements.date, f: FinanceFilter) {
@@ -318,6 +327,8 @@ export async function listExpenses(db: Exec, f: FinanceFilter = {}) {
   const conds: SQL[] = [isNull(expenses.deletedAt), ...dateConds(expenses.date, f)];
   if (f.party) conds.push(eq(expenses.party, f.party));
   if (f.categoryId) conds.push(eq(expenses.categoryId, f.categoryId));
+  if (f.species) conds.push(sql`(${expenses.species} = ${f.species} or ${expenses.species} = 'ambos')`);
+  if (f.speciesExact) conds.push(eq(expenses.species, f.speciesExact));
   if (f.lotId) conds.push(sql`(${expenses.lotId} = ${f.lotId} or ${animals.lotId} = ${f.lotId})`);
   return db
     .select({
@@ -330,6 +341,7 @@ export async function listExpenses(db: Exec, f: FinanceFilter = {}) {
       paidByUserId: expenses.paidByUserId,
       paidByName: users.name,
       party: expenses.party,
+      species: expenses.species,
       animalId: expenses.animalId,
       animalTag: animals.tag,
       lotId: expenses.lotId,
@@ -351,6 +363,8 @@ export async function listRevenues(db: Exec, f: FinanceFilter = {}) {
   const conds: SQL[] = [isNull(revenues.deletedAt), ...dateConds(revenues.date, f)];
   if (f.party) conds.push(eq(revenues.party, f.party));
   if (f.categoryId) conds.push(eq(revenues.categoryId, f.categoryId));
+  if (f.species) conds.push(sql`(${revenues.species} = ${f.species} or ${revenues.species} = 'ambos')`);
+  if (f.speciesExact) conds.push(eq(revenues.species, f.speciesExact));
   if (f.lotId) conds.push(eq(revenues.lotId, f.lotId));
   return db
     .select({
@@ -363,6 +377,7 @@ export async function listRevenues(db: Exec, f: FinanceFilter = {}) {
       receivedByUserId: revenues.receivedByUserId,
       receivedByName: users.name,
       party: revenues.party,
+      species: revenues.species,
       lotId: revenues.lotId,
       lotName: lots.name,
       receiptId: revenues.receiptId,

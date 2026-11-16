@@ -19,6 +19,7 @@ export default async function EditarAnimal({ params }: { params: Promise<{ id: s
         lots={lots}
         initial={{
           id: a.id,
+          species: a.species,
           tag: a.tag,
           sex: a.sex,
           breed: a.breed,

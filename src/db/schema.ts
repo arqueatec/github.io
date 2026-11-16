@@ -36,12 +36,24 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 export const roleEnum = pgEnum("user_role", ["admin", "socio"]);
 export const partyEnum = pgEnum("party", ["A", "B"]);
 export const sexEnum = pgEnum("sex", ["M", "F"]);
+/** Espécie do animal. */
+export const speciesEnum = pgEnum("species", ["ovino", "bovino"]);
+/** Espécie de um lançamento financeiro: ovino, bovino ou "ambos" (geral, rateado nos dois). */
+export const financeSpeciesEnum = pgEnum("finance_species", ["ovino", "bovino", "ambos"]);
 export const animalCategoryEnum = pgEnum("animal_category", [
+  // ovinos
   "matriz",
   "reprodutor",
   "cordeiro",
   "borrego",
   "descarte",
+  // bovinos
+  "vaca",
+  "touro",
+  "bezerro",
+  "novilho",
+  "garrote",
+  "boi",
 ]);
 export const animalStatusEnum = pgEnum("animal_status", [
   "ativo",
@@ -151,6 +163,7 @@ export const animals = pgTable(
     id: serial("id").primaryKey(),
     clientRef: uuid("client_ref").unique(),
     tag: text("tag").notNull().unique(),
+    species: speciesEnum("species").notNull().default("ovino"),
     sex: sexEnum("sex").notNull(),
     breed: text("breed"),
     birthDate: date("birth_date"),
@@ -175,6 +188,7 @@ export const animals = pgTable(
     index("animals_mother_idx").on(t.motherId),
     index("animals_status_idx").on(t.status),
     index("animals_lot_idx").on(t.lotId),
+    index("animals_species_idx").on(t.species),
   ],
 );
 
@@ -367,6 +381,8 @@ export const expenses = pgTable(
       .references(() => users.id),
     /** Parte derivada do usuário pagante no momento do lançamento (snapshot). */
     party: partyEnum("party").notNull(),
+    /** Espécie a que a despesa se refere: ovino, bovino ou "ambos" (geral). */
+    species: financeSpeciesEnum("species").notNull().default("ambos"),
     animalId: integer("animal_id").references(() => animals.id, { onDelete: "set null" }),
     lotId: integer("lot_id").references(() => lots.id),
     receiptId: integer("receipt_id").references(() => attachments.id),
@@ -395,6 +411,8 @@ export const revenues = pgTable(
       .notNull()
       .references(() => users.id),
     party: partyEnum("party").notNull(),
+    /** Espécie a que a receita se refere: ovino, bovino ou "ambos" (geral). */
+    species: financeSpeciesEnum("species").notNull().default("ambos"),
     lotId: integer("lot_id").references(() => lots.id),
     receiptId: integer("receipt_id").references(() => attachments.id),
     createdBy: integer("created_by")

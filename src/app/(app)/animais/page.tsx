@@ -5,7 +5,7 @@ import { listAnimals } from "@/server/services/animals";
 import { listLots } from "@/server/services/admin";
 import { ageLabel, todayIso } from "@/domain/dates";
 import { Badge, Empty, LinkButton, PageHeader, Table } from "@/components/ui";
-import { CATEGORY_LABEL, STATUS_LABEL, categoryLabel } from "@/lib/labels";
+import { CATEGORY_LABEL, SPECIES_LABEL, STATUS_LABEL, categoryLabel } from "@/lib/labels";
 
 export const metadata = { title: "Rebanho" };
 
@@ -13,7 +13,7 @@ export default async function AnimaisPage({ searchParams }: { searchParams: Prom
   await pageUser();
   const p = await searchParams;
   const db = getDb();
-  const filter = { q: sp(p, "q"), status: sp(p, "status") ?? "ativo", category: sp(p, "category"), sex: sp(p, "sex"), lotId: spInt(p, "lotId") };
+  const filter = { q: sp(p, "q"), status: sp(p, "status") ?? "ativo", category: sp(p, "category"), sex: sp(p, "sex"), lotId: spInt(p, "lotId"), species: sp(p, "species") };
   const [rows, lots] = await Promise.all([listAnimals(db, filter), listLots(db)]);
   const today = todayIso();
   const qs = new URLSearchParams(Object.entries({ ...filter, lotId: filter.lotId ? String(filter.lotId) : "" }).filter(([, v]) => v) as [string, string][]);
@@ -25,7 +25,7 @@ export default async function AnimaisPage({ searchParams }: { searchParams: Prom
         actions={
           <>
             <LinkButton href="/animais/novo">+ Animal</LinkButton>
-            <LinkButton href={`/api/export/animais?format=csv${filter.lotId ? `&lotId=${filter.lotId}` : ""}`} variant="secondary" prefetch={false}>
+            <LinkButton href={`/api/export/animais?format=csv${filter.lotId ? `&lotId=${filter.lotId}` : ""}${filter.species ? `&species=${filter.species}` : ""}`} variant="secondary" prefetch={false}>
               CSV
             </LinkButton>
           </>
@@ -33,6 +33,11 @@ export default async function AnimaisPage({ searchParams }: { searchParams: Prom
       />
       <form className="card mb-4 grid grid-cols-2 gap-2 sm:grid-cols-6" method="get">
         <input name="q" defaultValue={filter.q ?? ""} placeholder="Brinco ou obs." className="input col-span-2" />
+        <select name="species" defaultValue={filter.species ?? ""} className="select">
+          <option value="">Todas espécies</option>
+          <option value="ovino">Ovinos (ovelhas)</option>
+          <option value="bovino">Bovinos (gado)</option>
+        </select>
         <select name="status" defaultValue={filter.status} className="select">
           <option value="todos">Todas situações</option>
           {Object.entries(STATUS_LABEL).map(([k, v]) => (
@@ -70,13 +75,16 @@ export default async function AnimaisPage({ searchParams }: { searchParams: Prom
         </Empty>
       ) : (
         <div className="card">
-          <Table head={["Brinco", "Categoria", "Sexo", "Idade", "Lote", "Situação"]}>
+          <Table head={["Brinco", "Espécie", "Categoria", "Sexo", "Idade", "Lote", "Situação"]}>
             {rows.map((a) => (
               <tr key={a.id}>
                 <td>
                   <Link className="link font-semibold" href={`/animais/${a.id}`}>
                     {a.tag}
                   </Link>
+                </td>
+                <td>
+                  <Badge tone={a.species === "bovino" ? "info" : "neutral"}>{SPECIES_LABEL[a.species]}</Badge>
                 </td>
                 <td>{categoryLabel(a.category, a.sex)}</td>
                 <td>{a.sex}</td>

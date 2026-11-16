@@ -35,8 +35,10 @@ export default async function AnimalPage({ params }: { params: Promise<{ id: str
   if (!a) notFound();
   const today = todayIso();
   const [gen, timeline, weights, exits] = await Promise.all([genealogy(db, id), animalTimeline(db, id), listWeighings(db, id), listExits(db)]);
-  const isEwe = a.sex === "F" && (a.category === "matriz" || a.category === "descarte" || timeline.some((t) => t.kind === "parto"));
+  const femaleAdult = a.species === "bovino" ? "vaca" : "matriz";
+  const isEwe = a.sex === "F" && (a.category === femaleAdult || a.category === "descarte" || timeline.some((t) => t.kind === "parto"));
   const ewe = isEwe ? await eweDetail(db, id, a.exitDate ?? today) : null;
+  const gestDays = a.species === "bovino" ? 285 : 150;
   const exit = exits.find((e) => e.animalId === id);
   const active = a.status === "ativo";
 
@@ -47,6 +49,7 @@ export default async function AnimalPage({ params }: { params: Promise<{ id: str
         title={`Brinco ${a.tag}`}
         subtitle={
           <span className="flex flex-wrap items-center gap-1">
+            <Badge tone={a.species === "bovino" ? "info" : "neutral"}>{a.species === "bovino" ? "🐄 Bovino" : "🐑 Ovino"}</Badge>
             <Badge tone="info">{categoryLabel(a.category, a.sex)}</Badge>
             <Badge tone={active ? "good" : "bad"}>{STATUS_LABEL[a.status]}</Badge>
             {a.lotName && <Badge>{a.lotName}</Badge>}
@@ -147,7 +150,7 @@ export default async function AnimalPage({ params }: { params: Promise<{ id: str
 
       {ewe && (
         <>
-          <Card title="Desempenho da matriz">
+          <Card title={a.species === "bovino" ? "Desempenho da vaca" : "Desempenho da matriz"}>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Stat label="Partos" value={ewe.stats.births} hint={ewe.stats.firstBirth ? `desde ${formatDateBR(ewe.stats.firstBirth)}` : "nenhum registrado"} />
               <Stat label="Crias nascidas" value={ewe.stats.lambsBorn} hint={`${ewe.stats.lambsBornAlive} vivas`} />
@@ -162,13 +165,13 @@ export default async function AnimalPage({ params }: { params: Promise<{ id: str
               <Stat label="Mortes pré-desmame" value={ewe.stats.lambsDiedPreWeaning} />
               <Stat
                 label="Próximo parto"
-                value={ewe.lastBreeding && (!ewe.stats.lastBirth || ewe.lastBreeding.date > ewe.stats.lastBirth) ? formatDateBR(expectedBirthDate(ewe.lastBreeding.date)) : "—"}
+                value={ewe.lastBreeding && (!ewe.stats.lastBirth || ewe.lastBreeding.date > ewe.stats.lastBirth) ? formatDateBR(expectedBirthDate(ewe.lastBreeding.date, gestDays)) : "—"}
                 hint={ewe.lastBreeding ? `cobertura em ${formatDateBR(ewe.lastBreeding.date)}` : "sem cobertura"}
               />
             </div>
             {a.origin === "inventario" && (
               <p className="mt-3 text-xs text-[var(--muted)]">
-                Matriz do inventário inicial: partos anteriores a {formatDateBR(a.entryDate)} não estão registrados, portanto os índices refletem só o histórico no sistema.
+                {a.species === "bovino" ? "Vaca" : "Matriz"} do inventário inicial: partos anteriores a {formatDateBR(a.entryDate)} não estão registrados, portanto os índices refletem só o histórico no sistema.
               </p>
             )}
           </Card>
@@ -216,7 +219,7 @@ export default async function AnimalPage({ params }: { params: Promise<{ id: str
 
           <Card title="Custos associados">
             <div className="grid grid-cols-2 gap-2">
-              <Stat label="Despesas diretas" value={formatCents(ewe.costs.directTotal)} hint={`${ewe.costs.direct.length} lançamento(s) vinculados a esta matriz`} />
+              <Stat label="Despesas diretas" value={formatCents(ewe.costs.directTotal)} hint={`${ewe.costs.direct.length} lançamento(s) vinculados a este animal`} />
               <Stat label="Rateio estimado das despesas gerais" value={formatCents(ewe.costs.estimatedShare)} hint={`${ewe.costs.daysInHerd} dias no rebanho × custo médio por cabeça/dia`} />
             </div>
             {ewe.costs.direct.length > 0 && (

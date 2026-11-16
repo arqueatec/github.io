@@ -1,8 +1,8 @@
-import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { DB, Exec } from "@/db";
 import { animals, births, breedings, pregnancyChecks, weanings } from "@/db/schema";
 import { addDays, todayIso } from "@/domain/dates";
-import { GESTATION_DAYS } from "@/domain/indices";
+import { SPECIES_CONFIG, gestationFor } from "@/domain/species";
 import { assert, canWriteHerd, type Actor } from "@/domain/policy";
 import { birthCreateSchema, breedingCreateSchema, pregnancyCreateSchema, weaningCreateSchema } from "@/lib/schemas";
 import { AppError, ConflictError, NotFoundError } from "../errors";
@@ -90,14 +90,15 @@ export async function createBirth(db: DB, actor: Actor, raw: unknown) {
     const ewe = await requireAnimalByTag(tx, input.eweTag, { sex: "F", label: "Matriz" });
     if (ewe.status !== "ativo" && ewe.exitDate && ewe.exitDate < input.date)
       throw new AppError(`Matriz ${ewe.tag} já teve baixa em ${ewe.exitDate}`);
+    const gest = gestationFor(ewe.species);
     let ramId: number | null = null;
     if (input.ramTag) ramId = (await requireAnimalByTag(tx, input.ramTag, { sex: "M", label: "Reprodutor" })).id;
     else {
-      // pai presumido = reprodutor da última cobertura até 170 dias antes
+      // pai presumido = reprodutor da última cobertura dentro de ~1 gestação antes do parto
       const [b] = await tx
         .select({ ramId: breedings.ramId })
         .from(breedings)
-        .where(and(eq(breedings.eweId, ewe.id), lte(breedings.date, input.date), gte(breedings.date, addDays(input.date, -170))))
+        .where(and(eq(breedings.eweId, ewe.id), lte(breedings.date, input.date), gte(breedings.date, addDays(input.date, -(gest + 35)))))
         .orderBy(desc(breedings.date))
         .limit(1);
       ramId = b?.ramId ?? null;
@@ -130,12 +131,13 @@ export async function createBirth(db: DB, actor: Actor, raw: unknown) {
     for (const l of input.lambs) {
       const lamb = await insertAnimal(tx, actor, {
         tag: l.tag,
+        species: ewe.species,
         sex: l.sex,
         breed: ewe.breed,
         birthDate: input.date,
         motherTag: ewe.tag,
         fatherTag: ramTag ?? null,
-        category: "cordeiro",
+        category: SPECIES_CONFIG[ewe.species].young,
         lotId: input.lotId ?? ewe.lotId,
         origin: "nascimento",
         entryDate: input.date,
@@ -144,9 +146,10 @@ export async function createBirth(db: DB, actor: Actor, raw: unknown) {
       });
       lambIds.push(lamb.id);
     }
-    if (ewe.category !== "matriz" && ewe.category !== "descarte") {
-      await recordCategoryChange(tx, actor, ewe.id, ewe.category, "matriz", input.date);
-      await tx.update(animals).set({ category: "matriz", updatedAt: new Date() }).where(eq(animals.id, ewe.id));
+    const femaleAdult = SPECIES_CONFIG[ewe.species].femaleAdult;
+    if (ewe.category !== femaleAdult && ewe.category !== "descarte") {
+      await recordCategoryChange(tx, actor, ewe.id, ewe.category, femaleAdult, input.date);
+      await tx.update(animals).set({ category: femaleAdult, updatedAt: new Date() }).where(eq(animals.id, ewe.id));
     }
     await audit(tx, actor.id, "birth", row.id, "create", null, { ...row, lambIds });
     return { id: row.id, duplicate: false, lambIds };
@@ -193,9 +196,11 @@ export async function createWeanings(db: DB, actor: Actor, raw: unknown) {
         })
         .returning({ id: weanings.id });
       ids.push(row.id);
-      if (input.promoteToBorrego && a.category === "cordeiro" && a.status === "ativo") {
-        await recordCategoryChange(tx, actor, a.id, "cordeiro", "borrego", input.date);
-        await tx.update(animals).set({ category: "borrego", updatedAt: new Date() }).where(eq(animals.id, a.id));
+      const young = SPECIES_CONFIG[a.species].young;
+      const weaned = SPECIES_CONFIG[a.species].weaned;
+      if (input.promoteToBorrego && a.category === young && a.status === "ativo") {
+        await recordCategoryChange(tx, actor, a.id, young, weaned, input.date);
+        await tx.update(animals).set({ category: weaned, updatedAt: new Date() }).where(eq(animals.id, a.id));
       }
     }
     return { duplicate: false, ids };
@@ -248,11 +253,13 @@ export async function listBirths(db: Exec, opts: { eweId?: number; limit?: numbe
  * correspondente nem diagnóstico "vazia" posterior, em matrizes ativas.
  */
 export async function expectedBirths(db: Exec, refDate = todayIso(), horizonDays = 60) {
+  const maxGest = Math.max(gestationFor("ovino"), gestationFor("bovino"));
   const rows = await db
     .select({
       breedingId: breedings.id,
       eweId: breedings.eweId,
       eweTag: animals.tag,
+      species: animals.species,
       date: breedings.date,
       endDate: breedings.endDate,
     })
@@ -261,7 +268,7 @@ export async function expectedBirths(db: Exec, refDate = todayIso(), horizonDays
     .where(
       and(
         eq(animals.status, "ativo"),
-        gte(breedings.date, addDays(refDate, -GESTATION_DAYS - 30)),
+        gte(breedings.date, addDays(refDate, -maxGest - 30)),
         sql`not exists (select 1 from births b where b.ewe_id = ${breedings.eweId} and b.date > ${breedings.date})`,
         sql`not exists (select 1 from pregnancy_checks p where p.ewe_id = ${breedings.eweId} and p.date > ${breedings.date} and p.result = 'vazia')`,
         sql`not exists (select 1 from breedings b2 where b2.ewe_id = ${breedings.eweId} and b2.date > ${breedings.date})`,
@@ -269,21 +276,25 @@ export async function expectedBirths(db: Exec, refDate = todayIso(), horizonDays
     )
     .orderBy(asc(breedings.date));
   return rows
-    .map((r) => ({
-      ...r,
-      expected: addDays(r.date, GESTATION_DAYS),
-      expectedEnd: r.endDate ? addDays(r.endDate, GESTATION_DAYS) : null,
-    }))
-    .filter((r) => r.expected <= addDays(refDate, horizonDays));
+    .map((r) => {
+      const gest = gestationFor(r.species);
+      return {
+        ...r,
+        expected: addDays(r.date, gest),
+        expectedEnd: r.endDate ? addDays(r.endDate, gest) : null,
+      };
+    })
+    .filter((r) => r.expected <= addDays(refDate, horizonDays))
+    .sort((a, b) => a.expected.localeCompare(b.expected));
 }
 
 /** Crias ativas sem desmame registrado (para o formulário de desmame). */
 export async function unweanedLambs(db: Exec) {
   return db
-    .select({ id: animals.id, tag: animals.tag, sex: animals.sex, birthDate: animals.birthDate, motherId: animals.motherId })
+    .select({ id: animals.id, tag: animals.tag, species: animals.species, sex: animals.sex, birthDate: animals.birthDate, motherId: animals.motherId })
     .from(animals)
     .leftJoin(weanings, eq(weanings.animalId, animals.id))
-    .where(and(eq(animals.status, "ativo"), eq(animals.category, "cordeiro"), isNull(weanings.id)))
+    .where(and(eq(animals.status, "ativo"), inArray(animals.category, ["cordeiro", "bezerro"]), isNull(weanings.id)))
     .orderBy(asc(animals.birthDate));
 }
 

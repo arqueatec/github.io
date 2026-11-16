@@ -9,7 +9,8 @@ import { formatCents } from "@/domain/money";
 import { Badge, Card, Empty, Formula, LinkButton, PageHeader, Stat, Table } from "@/components/ui";
 import { PeriodFilter, exportQuery } from "@/components/PeriodFilter";
 import { HBarList, HerdChart } from "@/components/Charts";
-import { CATEGORY_LABEL } from "@/lib/labels";
+import { CATEGORY_LABEL, SPECIES_HERD_LABEL } from "@/lib/labels";
+import { categoriesFor, type Species } from "@/domain/species";
 
 export const metadata = { title: "Indicadores" };
 
@@ -39,11 +40,14 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
   const def = defaultPeriod();
   const start = sp(p, "start");
   const end = sp(p, "end");
+  const speciesParam = sp(p, "species");
+  const species: Species = speciesParam === "bovino" ? "bovino" : "ovino";
   const f = {
     start: start && isIsoDate(start) ? start : def.start,
     end: end && isIsoDate(end) ? end : def.end,
     party: (sp(p, "party") as "A" | "B" | null) ?? null,
     lotId: spInt(p, "lotId"),
+    species,
   };
   if (f.start > f.end) [f.start, f.end] = [f.end, f.start];
   const db = getDb();
@@ -51,12 +55,23 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
   const c = d.ewes.completeness;
   const q = exportQuery(f);
   const partyLabel = f.party ? `Parte ${f.party}` : "ambas as partes";
+  const herdCats = categoriesFor(species);
+  const femaleLabel = species === "bovino" ? "vacas" : "matrizes";
+  const tabHref = (s: Species) => {
+    const qs = new URLSearchParams();
+    if (start) qs.set("start", f.start);
+    if (end) qs.set("end", f.end);
+    if (f.party) qs.set("party", f.party);
+    if (f.lotId) qs.set("lotId", String(f.lotId));
+    qs.set("species", s);
+    return `/indicadores?${qs.toString()}`;
+  };
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="Indicadores"
-        subtitle={`${formatDateBR(f.start)} a ${formatDateBR(f.end)}${f.lotId ? ` · ${lots.find((l) => l.id === f.lotId)?.name}` : ""} · finanças: ${partyLabel}`}
+        subtitle={`${SPECIES_HERD_LABEL[species]} · ${formatDateBR(f.start)} a ${formatDateBR(f.end)}${f.lotId ? ` · ${lots.find((l) => l.id === f.lotId)?.name}` : ""} · finanças: ${partyLabel}`}
         actions={
           <>
             <LinkButton href={`/api/export/indicadores?format=pdf&${q}`} variant="secondary" prefetch={false}>PDF</LinkButton>
@@ -64,31 +79,38 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
           </>
         }
       />
+      <div className="segmented max-w-xs">
+        {(["ovino", "bovino"] as const).map((s) => (
+          <Link key={s} href={tabHref(s)} className={s === species ? "active" : ""}>
+            {s === "ovino" ? "🐑 Ovelhas" : "🐄 Gado"}
+          </Link>
+        ))}
+      </div>
       <PeriodFilter {...f} lots={lots} />
 
       {(c.ewesActive > c.ewesWithInterval || c.inventoryAnimals > 0) && (
         <div className="rounded-lg border border-[var(--warn)] bg-[var(--warn-bg)] p-3 text-sm text-[var(--warn)]">
           <b>Histórico incompleto.</b> {c.inventoryAnimals} animal(is) vieram do inventário inicial (sem partos anteriores registrados);{" "}
           {c.animalsUnknownBirth} ativo(s) sem data de nascimento; {c.animalsUnknownMother} sem mãe conhecida. O intervalo entre partos só existe para{" "}
-          {c.ewesWithInterval} matriz(es) com 2+ partos registrados. Primeiro registro: {formatDateBR(c.firstRecordDate)}.
+          {c.ewesWithInterval} {femaleLabel} com 2+ partos registrados. Primeiro registro: {formatDateBR(c.firstRecordDate)}.
         </div>
       )}
 
       <Card title="Efetivo do rebanho">
         <div className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
           <Stat label="Total" value={d.herd.current.total} hint={`início: ${d.herd.atStart.total}`} />
-          {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
-            <Stat key={k} label={v} value={d.herd.current[k as keyof typeof d.herd.current]} hint={`início: ${d.herd.atStart[k as keyof typeof d.herd.atStart]}`} />
+          {herdCats.map((k) => (
+            <Stat key={k} label={CATEGORY_LABEL[k]} value={d.herd.current[k as keyof typeof d.herd.current]} hint={`início: ${d.herd.atStart[k as keyof typeof d.herd.atStart]}`} />
           ))}
         </div>
-        <HerdChart data={d.herd.evolution} />
+        <HerdChart data={d.herd.evolution} species={species} />
         <details className="mt-2 text-sm">
           <summary className="cursor-pointer text-xs font-medium text-[var(--primary)]">Ver tabela</summary>
-          <Table head={["Mês", ...Object.values(CATEGORY_LABEL), "Total"]}>
+          <Table head={["Mês", ...herdCats.map((k) => CATEGORY_LABEL[k]), "Total"]}>
             {d.herd.evolution.map((p) => (
               <tr key={p.date}>
                 <td>{formatDateBR(p.date)}</td>
-                {Object.keys(CATEGORY_LABEL).map((k) => (
+                {herdCats.map((k) => (
                   <td key={k} className="num">
                     {p[k as keyof typeof p]}
                   </td>
@@ -128,10 +150,10 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
         {d.mortality.causes.length ? <HBarList items={d.mortality.causes.map((x) => ({ name: x.cause, value: x.count }))} /> : <Empty>Nenhuma morte no período.</Empty>}
       </Card>
 
-      <Card title="Ranking de matrizes" actions={<Link className="link text-sm" href={`/api/export/matrizes?format=csv&${q}`} prefetch={false}>CSV</Link>}>
+      <Card title={`Ranking de ${femaleLabel}`} actions={<Link className="link text-sm" href={`/api/export/matrizes?format=csv&${q}`} prefetch={false}>CSV</Link>}>
         <p className="mb-2 text-xs text-[var(--muted)]">Ordem: crias desmamadas, depois partos, depois menor intervalo entre partos. Considera todo o histórico registrado até o fim do período.</p>
         {d.ewes.ranking.length ? (
-          <Table head={["#", "Matriz", "Partos", "Crias", "Desmam.", "Kg desm.", "IEP médio", "Prolif."]}>
+          <Table head={["#", species === "bovino" ? "Vaca" : "Matriz", "Partos", "Crias", "Desmam.", "Kg desm.", "IEP médio", "Prolif."]}>
             {d.ewes.ranking.map((s, i) => (
               <tr key={s.eweId}>
                 <td className="num">{i + 1}</td>
@@ -150,11 +172,11 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
             ))}
           </Table>
         ) : (
-          <Empty>Sem matrizes com dados.</Empty>
+          <Empty>Sem {femaleLabel} com dados.</Empty>
         )}
       </Card>
 
-      <Card title={`Matrizes improdutivas — candidatas a descarte (${d.ewes.unproductive.length})`}>
+      <Card title={`${species === "bovino" ? "Vacas" : "Matrizes"} improdutivas — candidatas a descarte (${d.ewes.unproductive.length})`}>
         <p className="mb-2 text-xs text-[var(--muted)]">Critérios: sem parto há mais de 365 dias (ou nenhum parto em 365 dias no rebanho), intervalo médio entre partos acima de 365 dias, 2+ diagnósticos vazios desde o último parto, perda de metade ou mais das crias antes do desmame, ou já classificada como descarte.</p>
         {d.ewes.unproductive.length ? (
           <ul className="divide-y divide-[var(--border)]">
@@ -172,11 +194,11 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
             ))}
           </ul>
         ) : (
-          <Empty>Nenhuma matriz improdutiva pelos critérios.</Empty>
+          <Empty>Nenhuma {species === "bovino" ? "vaca" : "matriz"} improdutiva pelos critérios.</Empty>
         )}
       </Card>
 
-      <Card title={`Finanças (${partyLabel})`}>
+      <Card title={`Finanças — ${SPECIES_HERD_LABEL[species]} (${partyLabel})`}>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Stat label={f.party ? `Pago pela Parte ${f.party}` : "Despesas"} value={formatCents(d.finance.expenseTotal)} />
           <Stat label={f.party ? `Recebido pela Parte ${f.party}` : "Receitas"} value={formatCents(d.finance.revenueTotal)} />
@@ -202,8 +224,11 @@ export default async function IndicadoresPage({ searchParams }: { searchParams: 
             <Formula formula="Fração B das receitas − fração B das despesas" />
           </div>
         </div>
+        <p className="mt-2 text-xs text-[var(--muted)]">
+          Inclui as despesas/receitas de {SPECIES_HERD_LABEL[species].toLowerCase()} e as lançadas como <b>geral</b> (valem para as duas espécies).
+        </p>
         <Link href="/financeiro/extrato" className="mt-3 block rounded-lg bg-[var(--surface-2)] p-3 text-sm">
-          <span className="text-xs text-[var(--muted)]">Saldo atual entre as partes: </span>
+          <span className="text-xs text-[var(--muted)]">Saldo atual entre as partes (único, todas as espécies): </span>
           <b>{d.finance.balanceDesc.debtor ? `Parte ${d.finance.balanceDesc.debtor} deve ${formatCents(d.finance.balanceDesc.amountCents)} à Parte ${d.finance.balanceDesc.creditor}` : "acertado"}</b>
         </Link>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">

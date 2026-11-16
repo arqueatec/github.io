@@ -33,6 +33,7 @@ function animal(id: number, over: Partial<AnimalRec> = {}): AnimalRec {
   return {
     id,
     tag: String(id),
+    species: "ovino",
     sex: "F",
     category: "matriz",
     status: "ativo",

@@ -2,13 +2,24 @@
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatCents } from "@/domain/money";
 
-const CATS = [
-  { key: "matriz", label: "Matrizes", color: "var(--series-1)" },
-  { key: "reprodutor", label: "Reprodutores", color: "var(--series-2)" },
-  { key: "cordeiro", label: "Cordeiros(as)", color: "var(--series-3)" },
-  { key: "borrego", label: "Borregos(as)", color: "var(--series-4)" },
-  { key: "descarte", label: "Descarte", color: "var(--series-5)" },
-];
+const CATS_BY_SPECIES = {
+  ovino: [
+    { key: "matriz", label: "Matrizes", color: "var(--series-1)" },
+    { key: "reprodutor", label: "Reprodutores", color: "var(--series-2)" },
+    { key: "cordeiro", label: "Cordeiros(as)", color: "var(--series-3)" },
+    { key: "borrego", label: "Borregos(as)", color: "var(--series-4)" },
+    { key: "descarte", label: "Descarte", color: "var(--series-5)" },
+  ],
+  bovino: [
+    { key: "vaca", label: "Vacas", color: "var(--series-1)" },
+    { key: "touro", label: "Touros", color: "var(--series-2)" },
+    { key: "bezerro", label: "Bezerros(as)", color: "var(--series-3)" },
+    { key: "novilho", label: "Novilhos(as)", color: "var(--series-4)" },
+    { key: "garrote", label: "Garrotes", color: "var(--series-5)" },
+    { key: "boi", label: "Bois", color: "var(--series-2)" },
+    { key: "descarte", label: "Descarte", color: "var(--grid)" },
+  ],
+} as const;
 
 const tooltipStyle = {
   background: "var(--surface)",
@@ -18,10 +29,11 @@ const tooltipStyle = {
   fontSize: 12,
 };
 
-type Point = { date: string; matriz: number; reprodutor: number; cordeiro: number; borrego: number; descarte: number; total: number };
+type Point = { date: string; total: number } & Record<string, number | string>;
 
 /** Efetivo por categoria ao fim de cada mês (barras empilhadas, eixo único). */
-export function HerdChart({ data }: { data: Point[] }) {
+export function HerdChart({ data, species = "ovino" }: { data: Point[]; species?: "ovino" | "bovino" }) {
+  const CATS = CATS_BY_SPECIES[species];
   const rows = data.map((d) => ({ ...d, mes: `${d.date.slice(5, 7)}/${d.date.slice(2, 4)}` }));
   return (
     <div className="h-72 w-full" role="img" aria-label="Evolução do efetivo por categoria, mês a mês">

@@ -1,6 +1,8 @@
 /** Esquemas de validação (zod) compartilhados entre formulários e servidor. */
 import { z } from "zod";
 import { isIsoDate } from "@/domain/dates";
+import { SPECIES_CONFIG, validCategoryForSex, type Species } from "@/domain/species";
+import { CATEGORY_LABEL } from "@/lib/labels";
 
 const emptyToNull = (v: unknown) => (v === "" || v === undefined ? null : v);
 
@@ -31,7 +33,21 @@ export const photoSchema = z
   .optional();
 
 export const SEX = ["M", "F"] as const;
-export const CATEGORY = ["matriz", "reprodutor", "cordeiro", "borrego", "descarte"] as const;
+export const SPECIES = ["ovino", "bovino"] as const;
+export const FINANCE_SPECIES = ["ovino", "bovino", "ambos"] as const;
+export const CATEGORY = [
+  "matriz",
+  "reprodutor",
+  "cordeiro",
+  "borrego",
+  "descarte",
+  "vaca",
+  "touro",
+  "bezerro",
+  "novilho",
+  "garrote",
+  "boi",
+] as const;
 export const STATUS = ["ativo", "vendido", "morto", "abatido", "consumo_proprio"] as const;
 export const ORIGIN = ["inventario", "nascimento", "compra", "importacao"] as const;
 export const HEALTH_TYPES = ["vacina", "vermifugacao", "tratamento", "outro"] as const;
@@ -46,6 +62,7 @@ export const animalCreateSchema = z
   .object({
     clientRef,
     tag: tagSchema,
+    species: z.enum(SPECIES).default("ovino"),
     sex: z.enum(SEX),
     breed: optText(60),
     birthDate: optDate,
@@ -61,8 +78,17 @@ export const animalCreateSchema = z
     notes: optText(1000),
     photo: photoSchema,
   })
-  .refine((v) => !(v.category === "matriz" && v.sex === "M"), { message: "Matriz deve ser fêmea", path: ["category"] })
-  .refine((v) => !(v.category === "reprodutor" && v.sex === "F"), { message: "Reprodutor deve ser macho", path: ["category"] });
+  .superRefine((v, ctx) => {
+    const sp = v.species as Species;
+    if (!validCategoryForSex(sp, v.category, v.sex)) {
+      const isFemaleCat = v.category === SPECIES_CONFIG[sp].femaleAdult;
+      ctx.addIssue({
+        code: "custom",
+        path: ["category"],
+        message: `${CATEGORY_LABEL[v.category] ?? "Essa categoria"} deve ser ${isFemaleCat ? "fêmea" : "macho"}`,
+      });
+    }
+  });
 export type AnimalCreate = z.infer<typeof animalCreateSchema>;
 
 export const animalUpdateSchema = z.object({
@@ -223,6 +249,7 @@ export const expenseCreateSchema = z.object({
   categoryId: z.coerce.number().int().positive("Escolha a categoria"),
   description: optText(300),
   paidByUserId: z.coerce.number().int().positive("Informe quem pagou"),
+  species: z.enum(FINANCE_SPECIES).default("ambos"),
   animalTag: optTag,
   lotId: optInt,
   receipt: photoSchema,
@@ -239,6 +266,7 @@ export const revenueCreateSchema = z.object({
   categoryId: z.coerce.number().int().positive("Escolha a categoria"),
   description: optText(300),
   receivedByUserId: z.coerce.number().int().positive("Informe quem recebeu"),
+  species: z.enum(FINANCE_SPECIES).default("ambos"),
   lotId: optInt,
   receipt: photoSchema,
 });

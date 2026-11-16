@@ -15,6 +15,13 @@
       "when": 1791683271656,
       "tag": "0001_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794824490754,
+      "tag": "0002_species",
+      "breakpoints": true
     }
   ]
 }

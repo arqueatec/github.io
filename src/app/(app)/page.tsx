@@ -10,7 +10,8 @@ import { describeBalance } from "@/domain/ledger";
 import { formatCents } from "@/domain/money";
 import { diffDays, formatDateBR, todayIso } from "@/domain/dates";
 import { Badge, Card, Empty, Stat } from "@/components/ui";
-import { CATEGORY_LABEL, HEALTH_LABEL } from "@/lib/labels";
+import { CATEGORY_LABEL, HEALTH_LABEL, SPECIES_HERD_LABEL } from "@/lib/labels";
+import { categoriesFor } from "@/domain/species";
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
   const user = await pageUser();
@@ -20,6 +21,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   const [alerts, balance, inv, herd] = await Promise.all([getAlerts(db, today, 45), computeBalance(db), inventoryProgress(db), loadHerd(db)]);
   const b = describeBalance(balance);
   const counts = herdByCategory(herd.animals, today);
+  const ov = herdByCategory(herd.animals.filter((a) => a.species === "ovino"), today);
+  const bo = herdByCategory(herd.animals.filter((a) => a.species === "bovino"), today);
+  const hasBovino = bo.total > 0;
   const withdrawalGroups = new Map<string, { until: string; tags: string[] }>();
   for (const w of alerts.withdrawals) {
     const k = `${w.product}|${w.until}`;
@@ -51,7 +55,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
           />
         </Link>
         <Link href="/animais">
-          <Stat label="Animais ativos" value={counts.total} hint={`${counts.matriz} matrizes · ${counts.reprodutor} reprod.`} />
+          <Stat label="Animais ativos" value={counts.total} hint={hasBovino ? `${ov.total} ovelhas · ${bo.total} gado` : `${counts.matriz} matrizes · ${counts.reprodutor} reprod.`} />
         </Link>
         <Link href="/inventario">
           <Stat label="Inventário" value={`${inv.total}/${inv.target}`} hint={`${invPct}% do efetivo estimado`} />
@@ -139,14 +143,22 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
       )}
 
       <Card title="Efetivo por categoria">
-        <div className="grid grid-cols-5 gap-2 text-center">
-          {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
-            <Link key={k} href={`/animais?category=${k}`} className="rounded-lg bg-[var(--surface-2)] p-2">
-              <div className="text-lg font-bold">{counts[k as keyof typeof counts]}</div>
-              <div className="text-[10px] text-[var(--muted)]">{v}</div>
-            </Link>
-          ))}
-        </div>
+        {(hasBovino ? (["ovino", "bovino"] as const) : (["ovino"] as const)).map((spk) => {
+          const cnt = spk === "ovino" ? ov : bo;
+          return (
+            <div key={spk} className="mb-3 last:mb-0">
+              {hasBovino && <div className="mb-1 text-xs font-semibold text-[var(--muted)]">{SPECIES_HERD_LABEL[spk]} ({cnt.total})</div>}
+              <div className="grid grid-cols-5 gap-2 text-center">
+                {categoriesFor(spk).map((k) => (
+                  <Link key={k} href={`/animais?species=${spk}&category=${k}`} className="rounded-lg bg-[var(--surface-2)] p-2">
+                    <div className="text-lg font-bold">{cnt[k as keyof typeof cnt]}</div>
+                    <div className="text-[10px] text-[var(--muted)]">{CATEGORY_LABEL[k]}</div>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </Card>
     </div>
   );

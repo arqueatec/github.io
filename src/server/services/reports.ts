@@ -2,7 +2,8 @@ import type { Exec } from "@/db";
 import { ageLabel, formatDateBR, todayIso } from "@/domain/dates";
 import { describeBalance, type Party } from "@/domain/ledger";
 import { formatCents } from "@/domain/money";
-import { CATEGORY_LABEL, EXIT_LABEL, HEALTH_LABEL, METHOD_LABEL, ORIGIN_LABEL, SEX_LABEL, STATUS_LABEL, categoryLabel } from "@/lib/labels";
+import { CATEGORY_LABEL, EXIT_LABEL, FINANCE_SPECIES_LABEL, HEALTH_LABEL, METHOD_LABEL, ORIGIN_LABEL, SEX_LABEL, SPECIES_LABEL, STATUS_LABEL, categoryLabel } from "@/lib/labels";
+import type { Species } from "@/domain/species";
 import { listAnimals } from "./animals";
 import { dashboard, defaultPeriod } from "./dashboard";
 import { listExits } from "./exits";
@@ -25,6 +26,7 @@ export interface ReportFilter {
   end?: string | null;
   party?: Party | null;
   lotId?: number | null;
+  species?: Species | null;
 }
 
 const kg = (g: number | null | undefined) => (g ? (g / 1000).toFixed(1).replace(".", ",") : "");
@@ -45,14 +47,15 @@ export type ReportKind = keyof typeof REPORT_KINDS;
 
 export async function buildReport(db: Exec, kind: string, f: ReportFilter): Promise<Report> {
   const today = todayIso();
-  const range = { start: f.start ?? null, end: f.end ?? null, party: f.party ?? null, lotId: f.lotId ?? null };
+  const range = { start: f.start ?? null, end: f.end ?? null, party: f.party ?? null, lotId: f.lotId ?? null, species: f.species ?? null };
   switch (kind as ReportKind) {
     case "animais": {
-      const rows = await listAnimals(db, { status: "todos", lotId: f.lotId });
+      const rows = await listAnimals(db, { status: "todos", lotId: f.lotId, species: f.species });
       return {
         title: "Rebanho",
         columns: [
           { key: "tag", label: "Brinco" },
+          { key: "species", label: "Espécie" },
           { key: "sex", label: "Sexo" },
           { key: "category", label: "Categoria" },
           { key: "status", label: "Situação" },
@@ -66,6 +69,7 @@ export async function buildReport(db: Exec, kind: string, f: ReportFilter): Prom
         ],
         rows: rows.map((a) => ({
           tag: a.tag,
+          species: SPECIES_LABEL[a.species],
           sex: SEX_LABEL[a.sex],
           category: categoryLabel(a.category, a.sex),
           status: STATUS_LABEL[a.status],
@@ -91,6 +95,7 @@ export async function buildReport(db: Exec, kind: string, f: ReportFilter): Prom
           { key: "amount", label: "Valor (R$)" },
           { key: "paidBy", label: "Pago por" },
           { key: "party", label: "Parte" },
+          { key: "species", label: "Espécie" },
           { key: "animal", label: "Animal" },
           { key: "lot", label: "Lote" },
         ],
@@ -101,6 +106,7 @@ export async function buildReport(db: Exec, kind: string, f: ReportFilter): Prom
           amount: centsCell(e.amountCents),
           paidBy: e.paidByName,
           party: e.party,
+          species: FINANCE_SPECIES_LABEL[e.species],
           animal: e.animalTag,
           lot: e.lotName,
         })),
@@ -118,6 +124,7 @@ export async function buildReport(db: Exec, kind: string, f: ReportFilter): Prom
           { key: "amount", label: "Valor (R$)" },
           { key: "receivedBy", label: "Recebido por" },
           { key: "party", label: "Parte" },
+          { key: "species", label: "Espécie" },
         ],
         rows: rows.map((r) => ({
           date: formatDateBR(r.date),
@@ -126,6 +133,7 @@ export async function buildReport(db: Exec, kind: string, f: ReportFilter): Prom
           amount: centsCell(r.amountCents),
           receivedBy: r.receivedByName,
           party: r.party,
+          species: FINANCE_SPECIES_LABEL[r.species],
         })),
         summary: [`Total: ${formatCents(rows.reduce((s, e) => s + e.amountCents, 0))}`],
       };
@@ -263,7 +271,7 @@ export async function buildReport(db: Exec, kind: string, f: ReportFilter): Prom
     case "indicadores":
     case "matrizes": {
       const p = { ...defaultPeriod(), ...(f.start ? { start: f.start } : {}), ...(f.end ? { end: f.end } : {}) };
-      const d = await dashboard(db, { ...p, lotId: f.lotId, party: f.party });
+      const d = await dashboard(db, { ...p, lotId: f.lotId, party: f.party, species: f.species });
       if (kind === "matrizes") {
         return {
           title: "Ranking de matrizes",
