@@ -9,11 +9,13 @@ export const GET = authed<{ kind: string }>(async (req, user, p) => {
   const start = q.get("start");
   const end = q.get("end");
   const party = q.get("party");
+  const species = q.get("species");
   const lotId = Number(q.get("lotId")) || null;
   const report = await buildReport(getDb(), p.kind, {
     start: isIsoDate(start) ? start : null,
     end: isIsoDate(end) ? end : null,
     party: party === "A" || party === "B" ? party : null,
+    species: species === "ovino" || species === "bovino" ? species : null,
     lotId,
   });
   const base = `${p.kind}-${todayIso()}`;

@@ -9,9 +9,11 @@ export function ExportPicker({ kinds }: { kinds: { value: string; label: string 
   const [kind, setKind] = useState(kinds[0].value);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  const [species, setSpecies] = useState("");
   const q = new URLSearchParams();
   if (start) q.set("start", start);
   if (end) q.set("end", end);
+  if (species) q.set("species", species);
   return (
     <div className="space-y-3">
       <Field label="Relatório">
@@ -21,6 +23,13 @@ export function ExportPicker({ kinds }: { kinds: { value: string; label: string 
               {k.label}
             </option>
           ))}
+        </select>
+      </Field>
+      <Field label="Espécie">
+        <select className="select" value={species} onChange={(e) => setSpecies(e.target.value)}>
+          <option value="">Todas / geral</option>
+          <option value="ovino">Ovelhas</option>
+          <option value="bovino">Gado</option>
         </select>
       </Field>
       <div className="grid grid-cols-2 gap-3">
@@ -43,7 +52,7 @@ export function ExportPicker({ kinds }: { kinds: { value: string; label: string 
   );
 }
 
-type Row = { line: number; tag: string; sex: string | null; category: string | null; motherTag: string | null; lotName: string | null; errors: string[] };
+type Row = { line: number; tag: string; species: string; sex: string | null; category: string | null; motherTag: string | null; lotName: string | null; errors: string[] };
 
 export function ImportSheet() {
   const router = useRouter();
@@ -109,6 +118,7 @@ export function ImportSheet() {
                 <tr>
                   <th>Linha</th>
                   <th>Brinco</th>
+                  <th>Espécie</th>
                   <th>Sexo</th>
                   <th>Categoria</th>
                   <th>Mãe</th>
@@ -121,6 +131,7 @@ export function ImportSheet() {
                   <tr key={r.line}>
                     <td>{r.line}</td>
                     <td>{r.tag}</td>
+                    <td>{r.species === "bovino" ? "Gado" : "Ovelha"}</td>
                     <td>{r.sex}</td>
                     <td>{r.category}</td>
                     <td>{r.motherTag}</td>

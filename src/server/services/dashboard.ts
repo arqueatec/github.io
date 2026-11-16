@@ -28,6 +28,7 @@ import {
 } from "@/domain/indices";
 import { describeBalance, partyTotals, type Party } from "@/domain/ledger";
 import { buildLedger } from "@/domain/ledger";
+import { SPECIES_CONFIG, gestationFor, type Species } from "@/domain/species";
 import { getShares, ledgerInputs, listExpenses, listRevenues } from "./finance";
 
 export interface DashboardFilter {
@@ -35,6 +36,8 @@ export interface DashboardFilter {
   end: string;
   party?: Party | null;
   lotId?: number | null;
+  /** Espécie do painel (padrão ovino): efetivo, índices e finanças são calculados para ela. */
+  species?: Species | null;
 }
 
 export function defaultPeriod(): { start: string; end: string } {
@@ -62,6 +65,7 @@ export async function loadHerd(db: Exec) {
   const herd: AnimalRec[] = an.map((a) => ({
     id: a.id,
     tag: a.tag,
+    species: a.species,
     sex: a.sex,
     category: a.category,
     status: a.status,
@@ -86,6 +90,21 @@ export async function loadHerd(db: Exec) {
 
 export type Herd = Awaited<ReturnType<typeof loadHerd>>;
 
+/** Restringe o rebanho a uma espécie (ovino ou bovino). */
+export function filterHerdBySpecies(h: Herd, species: Species | null | undefined): Herd {
+  if (!species) return h;
+  const ids = new Set(h.animals.filter((a) => a.species === species).map((a) => a.id));
+  return {
+    animals: h.animals.filter((a) => ids.has(a.id)),
+    births: h.births.filter((b) => ids.has(b.eweId)),
+    breedings: h.breedings.filter((b) => ids.has(b.eweId)),
+    weanings: h.weanings.filter((w) => ids.has(w.animalId)),
+    exits: h.exits.filter((e) => ids.has(e.animalId)),
+    pregnancies: h.pregnancies.filter((p) => ids.has(p.eweId)),
+    raw: { animals: h.raw.animals.filter((a) => a.species === species) },
+  };
+}
+
 /** Restringe o rebanho a um lote (lote atual do animal; partos pela matriz; crias pela mãe). */
 export function filterHerdByLot(h: Herd, lotId: number | null | undefined): Herd {
   if (!lotId) return h;
@@ -103,7 +122,10 @@ export function filterHerdByLot(h: Herd, lotId: number | null | undefined): Herd
 
 export async function dashboard(db: Exec, f: DashboardFilter) {
   const p: Period = { start: f.start, end: f.end };
-  const herd = filterHerdByLot(await loadHerd(db), f.lotId);
+  const species: Species = f.species ?? "ovino";
+  const cfg = SPECIES_CONFIG[species];
+  const gest = gestationFor(species);
+  const herd = filterHerdBySpecies(filterHerdByLot(await loadHerd(db), f.lotId), species);
   const { animals: an, births: bt, breedings: br, weanings: wn, exits: ex, pregnancies: pg } = herd;
 
   // ---- efetivo
@@ -113,22 +135,22 @@ export async function dashboard(db: Exec, f: DashboardFilter) {
 
   // ---- reprodução
   const repro = {
-    natalidade: birthRate(br, bt, p),
-    paricao: lambingRate(br, bt, p),
+    natalidade: birthRate(br, bt, p, gest),
+    paricao: lambingRate(br, bt, p, gest),
     prolificidade: prolificacy(bt, p),
     iep: herdBirthInterval(bt, p),
-    partosMatrizAno: birthsPerEwePerYear(an, bt, p),
+    partosMatrizAno: birthsPerEwePerYear(an, bt, p, cfg.femaleAdult),
   };
   const mort = mortality(an, ex, p);
   const lambMort = preWeaningMortality(an, bt, wn, ex, p);
   const wean = { taxa: weaningRate(an, bt, wn, p), peso: averageWeaningWeight(wn, p) };
 
   // ---- matrizes
-  const ewes = an.filter((a) => a.sex === "F" && (a.category === "matriz" || a.category === "descarte" || bt.some((b) => b.eweId === a.id)));
+  const ewes = an.filter((a) => a.sex === "F" && (a.category === cfg.femaleAdult || a.category === "descarte" || bt.some((b) => b.eweId === a.id)));
   const stats = ewes.map((e) => eweStats(e, an, bt, wn, ex, p.end));
   const statsMap = new Map(stats.map((s) => [s.eweId, s]));
   const ranking = rankEwes(stats.filter((s) => an.find((a) => a.id === s.eweId)?.status === "ativo"));
-  const unproductive = unproductiveEwes(ewes, statsMap, pg, p.end);
+  const unproductive = unproductiveEwes(ewes, statsMap, pg, p.end, undefined, gest);
   const intervals = birthIntervalsByEwe(bt);
   const completeness = {
     ewesActive: ewes.filter((e) => e.status === "ativo").length,
@@ -143,8 +165,8 @@ export async function dashboard(db: Exec, f: DashboardFilter) {
   const [shares, inputs, expList, revList] = await Promise.all([
     getShares(db),
     ledgerInputs(db),
-    listExpenses(db, { start: p.start, end: p.end, lotId: f.lotId, party: f.party ?? null }),
-    listRevenues(db, { start: p.start, end: p.end, lotId: f.lotId, party: f.party ?? null }),
+    listExpenses(db, { start: p.start, end: p.end, lotId: f.lotId, party: f.party ?? null, species }),
+    listRevenues(db, { start: p.start, end: p.end, lotId: f.lotId, party: f.party ?? null, species }),
   ]);
   const expTotal = expList.reduce((s, e) => s + e.amountCents, 0);
   const revTotal = revList.reduce((s, r) => s + r.amountCents, 0);
@@ -157,8 +179,8 @@ export async function dashboard(db: Exec, f: DashboardFilter) {
   // pois o rateio depende de ambas; o filtro de lote se aplica, o de parte não.
   const [expAll, revAll] = f.party
     ? await Promise.all([
-        listExpenses(db, { start: p.start, end: p.end, lotId: f.lotId }),
-        listRevenues(db, { start: p.start, end: p.end, lotId: f.lotId }),
+        listExpenses(db, { start: p.start, end: p.end, lotId: f.lotId, species }),
+        listRevenues(db, { start: p.start, end: p.end, lotId: f.lotId, species }),
       ])
     : [expList, revList];
   const expIds = new Set(expAll.map((e) => e.id));
@@ -168,7 +190,8 @@ export async function dashboard(db: Exec, f: DashboardFilter) {
       (e) =>
         e.date >= p.start &&
         e.date <= p.end &&
-        (e.kind === "despesa" ? expIds.has(e.id) : e.kind === "receita" ? revIds.has(e.id) : !f.lotId),
+        // reembolsos não têm espécie: ficam fora dos totais por espécie (o saldo único os considera à parte)
+        (e.kind === "despesa" ? expIds.has(e.id) : e.kind === "receita" ? revIds.has(e.id) : false),
     ),
     shares,
   );
@@ -178,6 +201,7 @@ export async function dashboard(db: Exec, f: DashboardFilter) {
   const avgHead = averageHeadcount(an, p);
   return {
     period: p,
+    species,
     herd: { current, atStart, evolution, averageHeadcount: avgHead },
     repro,
     mortality: { ...mort, lambs: lambMort },

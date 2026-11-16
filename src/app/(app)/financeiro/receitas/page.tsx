@@ -8,6 +8,7 @@ import { formatDateBR } from "@/domain/dates";
 import { formatCents } from "@/domain/money";
 import { Badge, Card, Empty, LinkButton, PageHeader, Table } from "@/components/ui";
 import { PeriodFilter, exportQuery } from "@/components/PeriodFilter";
+import { FINANCE_SPECIES_LABEL } from "@/lib/labels";
 
 export const metadata = { title: "Receitas" };
 
@@ -15,7 +16,15 @@ export default async function ReceitasPage({ searchParams }: { searchParams: Pro
   const user = await pageUser();
   const p = await searchParams;
   const db = getDb();
-  const f = { start: sp(p, "start"), end: sp(p, "end"), party: sp(p, "party") as "A" | "B" | null, lotId: spInt(p, "lotId"), categoryId: spInt(p, "categoryId") };
+  const spParam = sp(p, "species");
+  const f = {
+    start: sp(p, "start"),
+    end: sp(p, "end"),
+    party: sp(p, "party") as "A" | "B" | null,
+    lotId: spInt(p, "lotId"),
+    categoryId: spInt(p, "categoryId"),
+    species: (spParam === "ovino" || spParam === "bovino" ? spParam : null) as "ovino" | "bovino" | null,
+  };
   const [rows, lots, cats, lockedUntil] = await Promise.all([listRevenues(db, f), listLots(db), activeCategories(db, "receita"), getLockedUntil(db)]);
   const total = rows.reduce((s, r) => s + r.amountCents, 0);
   const q = exportQuery(f);
@@ -37,28 +46,39 @@ export default async function ReceitasPage({ searchParams }: { searchParams: Pro
         {...f}
         lots={lots}
         extra={
-          <label className="field">
-            <span className="field-label text-xs">Categoria</span>
-            <select name="categoryId" defaultValue={f.categoryId ?? ""} className="select">
-              <option value="">Todas</option>
-              {cats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <>
+            <label className="field">
+              <span className="field-label text-xs">Espécie</span>
+              <select name="species" defaultValue={f.species ?? ""} className="select">
+                <option value="">Todas</option>
+                <option value="ovino">Ovelhas (+ geral)</option>
+                <option value="bovino">Gado (+ geral)</option>
+              </select>
+            </label>
+            <label className="field">
+              <span className="field-label text-xs">Categoria</span>
+              <select name="categoryId" defaultValue={f.categoryId ?? ""} className="select">
+                <option value="">Todas</option>
+                {cats.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
         }
       />
       <Card>
         {rows.length ? (
-          <Table head={["Data", "Categoria", "Descrição", "Recebido por", "Valor", ""]}>
+          <Table head={["Data", "Categoria", "Espécie", "Descrição", "Recebido por", "Valor", ""]}>
             {rows.map((r) => {
               const mine = r.createdBy === user.id && !(lockedUntil && r.date <= lockedUntil);
               return (
                 <tr key={r.id}>
                   <td className="whitespace-nowrap">{formatDateBR(r.date)}</td>
                   <td>{r.categoryName}</td>
+                  <td className="text-xs">{FINANCE_SPECIES_LABEL[r.species]}</td>
                   <td>
                     {r.description ?? "—"}
                     {r.lotName && <div className="text-xs text-[var(--muted)]">{[r.lotName].filter(Boolean).join(" · ")}</div>}

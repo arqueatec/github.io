@@ -17,12 +17,14 @@ import {
 } from "@/db/schema";
 import { birthFromAgeMonths, formatDateBR, todayIso } from "@/domain/dates";
 import { assert, canWriteHerd, type Actor } from "@/domain/policy";
+import { SPECIES_CONFIG, validCategoryForSex } from "@/domain/species";
 import { animalCreateSchema, animalUpdateSchema, type AnimalCreate } from "@/lib/schemas";
 import { AppError, ConflictError, NotFoundError, isUniqueViolation } from "../errors";
 import { audit } from "./audit";
 import { findAnimalByTag, saveAttachment } from "./common";
 
 type Category = (typeof animals.$inferSelect)["category"];
+type Species = (typeof animals.$inferSelect)["species"];
 
 async function resolveParent(db: Exec, tag: string | null | undefined, sex: "M" | "F", selfTag?: string) {
   if (!tag) return null;
@@ -52,6 +54,7 @@ export async function insertAnimal(tx: Exec, actor: Actor, input: AnimalCreate &
     .values({
       clientRef: input.clientRef ?? null,
       tag: input.tag,
+      species: input.species ?? "ovino",
       sex: input.sex,
       breed: input.breed ?? null,
       birthDate,
@@ -126,8 +129,10 @@ export async function updateAnimal(db: DB, actor: Actor, id: number, raw: unknow
       if (input.photo) patch.photoId = await saveAttachment(tx, input.photo, actor.id);
       const sex = input.sex ?? before.sex;
       const category = input.category ?? before.category;
-      if (category === "matriz" && sex === "M") throw new AppError("Matriz deve ser fêmea");
-      if (category === "reprodutor" && sex === "F") throw new AppError("Reprodutor deve ser macho");
+      if (!validCategoryForSex(before.species, category, sex)) {
+        const fem = SPECIES_CONFIG[before.species].femaleAdult;
+        throw new AppError(category === fem ? "Essa categoria deve ser fêmea" : "Essa categoria deve ser macho");
+      }
       if (input.category && input.category !== before.category) {
         patch.category = input.category;
         await recordCategoryChange(tx, actor, id, before.category, input.category, changeDate);
@@ -183,6 +188,7 @@ export interface AnimalFilter {
   category?: string | null;
   sex?: string | null;
   lotId?: number | null;
+  species?: string | null;
 }
 
 export async function listAnimals(db: Exec, f: AnimalFilter = {}) {
@@ -192,10 +198,12 @@ export async function listAnimals(db: Exec, f: AnimalFilter = {}) {
   if (f.category) conds.push(eq(animals.category, f.category as Category));
   if (f.sex) conds.push(eq(animals.sex, f.sex as "M"));
   if (f.lotId) conds.push(eq(animals.lotId, f.lotId));
+  if (f.species && f.species !== "todas") conds.push(eq(animals.species, f.species as Species));
   return db
     .select({
       id: animals.id,
       tag: animals.tag,
+      species: animals.species,
       sex: animals.sex,
       breed: animals.breed,
       category: animals.category,
@@ -217,7 +225,7 @@ export async function listAnimals(db: Exec, f: AnimalFilter = {}) {
 
 export async function allTags(db: Exec) {
   return db
-    .select({ id: animals.id, tag: animals.tag, sex: animals.sex, category: animals.category, status: animals.status })
+    .select({ id: animals.id, tag: animals.tag, species: animals.species, sex: animals.sex, category: animals.category, status: animals.status })
     .from(animals)
     .orderBy(sql`length(${animals.tag})`, asc(animals.tag));
 }

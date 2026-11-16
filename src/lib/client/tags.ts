@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 export interface TagInfo {
   id: number;
   tag: string;
+  species: "ovino" | "bovino";
   sex: "M" | "F";
   category: string;
   status: string;

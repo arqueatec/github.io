@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { apiSend, ApiError } from "@/lib/client/api";
 import { addLocalTag, findTag, useTags } from "@/lib/client/tags";
 import { Field, FormError, PhotoInput, Segmented, TagInput, toast, todayLocal } from "@/components/forms";
-import { CATEGORY_LABEL, categoryLabel } from "@/lib/labels";
+import { categoryLabel, SPECIES_LABEL } from "@/lib/labels";
+import { categoriesForSex, type Species } from "@/domain/species";
 import { cx } from "@/components/ui";
 
 const AGES = [
@@ -15,13 +16,14 @@ const AGES = [
   { label: "4+ a", months: 60 },
 ];
 
-type Entry = { tag: string; sex: "M" | "F"; category: string; queued: boolean };
+type Entry = { tag: string; species: Species; sex: "M" | "F"; category: string; queued: boolean };
 const SESSION_KEY = "ovinos-inventory-session";
 
 export function QuickInventory({ lots, initialTotal, target }: { lots: { id: number; name: string }[]; initialTotal: number; target: number }) {
   const tags = useTags();
   const tagRef = useRef<HTMLInputElement>(null);
   const [tag, setTag] = useState("");
+  const [species, setSpecies] = useState<Species>("ovino");
   const [sex, setSex] = useState<"M" | "F">("F");
   const [category, setCategory] = useState("matriz");
   const [ageMode, setAgeMode] = useState<"idade" | "data" | "desconhecida">("idade");
@@ -39,6 +41,11 @@ export function QuickInventory({ lots, initialTotal, target }: { lots: { id: num
     try {
       setSession(JSON.parse(localStorage.getItem(SESSION_KEY) ?? "[]"));
       setLotId(localStorage.getItem("ovinos-inventory-lot") ?? "");
+      const sp = localStorage.getItem("ovinos-inventory-species");
+      if (sp === "ovino" || sp === "bovino") {
+        setSpecies(sp);
+        setCategory(categoriesForSex(sp, "F")[0]);
+      }
     } catch {}
   }, []);
   useEffect(() => {
@@ -59,8 +66,14 @@ export function QuickInventory({ lots, initialTotal, target }: { lots: { id: num
 
   const changeSex = (v: "M" | "F") => {
     setSex(v);
-    if (v === "M" && category === "matriz") setCategory("reprodutor");
-    if (v === "F" && category === "reprodutor") setCategory("matriz");
+    if (!categoriesForSex(species, v).includes(category as never)) setCategory(categoriesForSex(species, v)[0]);
+  };
+  const changeSpecies = (v: Species) => {
+    setSpecies(v);
+    setCategory(categoriesForSex(v, sex)[0]);
+    try {
+      localStorage.setItem("ovinos-inventory-species", v);
+    } catch {}
   };
 
   async function save(e: React.FormEvent) {
@@ -79,6 +92,7 @@ export function QuickInventory({ lots, initialTotal, target }: { lots: { id: num
         "/api/animals",
         {
           tag: t,
+          species,
           sex,
           category,
           ageMonths: ageMode === "idade" ? ageMonths : null,
@@ -92,8 +106,8 @@ export function QuickInventory({ lots, initialTotal, target }: { lots: { id: num
         },
         { offline: `Inventário: brinco ${t}` },
       );
-      addLocalTag({ id: (r.data as { id?: number } | null)?.id, tag: t, sex, category, status: "ativo" });
-      setSession((s) => [{ tag: t, sex, category, queued: r.queued }, ...s]);
+      addLocalTag({ id: (r.data as { id?: number } | null)?.id, tag: t, species, sex, category, status: "ativo" });
+      setSession((s) => [{ tag: t, species, sex, category, queued: r.queued }, ...s]);
       toast(r.queued ? `${t} guardado offline` : `${t} cadastrado ✓`, r.queued ? "info" : "ok");
       setTag("");
       setMotherTag("");
@@ -138,18 +152,19 @@ export function QuickInventory({ lots, initialTotal, target }: { lots: { id: num
             required
           />
         </Field>
+        <Field label="Espécie" hint="Fica selecionada para os próximos.">
+          <Segmented value={species} onChange={changeSpecies} options={[{ value: "ovino", label: "🐑 Ovelha" }, { value: "bovino", label: "🐄 Gado" }]} />
+        </Field>
         <Field label="Sexo">
           <Segmented value={sex} onChange={changeSex} options={[{ value: "F", label: "♀ Fêmea" }, { value: "M", label: "♂ Macho" }]} />
         </Field>
         <Field label="Categoria">
           <div className="grid grid-cols-3 gap-2">
-            {Object.entries(CATEGORY_LABEL)
-              .filter(([k]) => !(sex === "M" && k === "matriz") && !(sex === "F" && k === "reprodutor"))
-              .map(([k]) => (
-                <button type="button" key={k} onClick={() => setCategory(k)} className={cx("btn", category === k ? "btn-primary" : "btn-secondary")}>
-                  {categoryLabel(k, sex)}
-                </button>
-              ))}
+            {categoriesForSex(species, sex).map((k) => (
+              <button type="button" key={k} onClick={() => setCategory(k)} className={cx("btn", category === k ? "btn-primary" : "btn-secondary")}>
+                {categoryLabel(k, sex)}
+              </button>
+            ))}
           </div>
         </Field>
         <Field label="Idade">
@@ -174,7 +189,7 @@ export function QuickInventory({ lots, initialTotal, target }: { lots: { id: num
         )}
         {ageMode === "data" && <input type="date" className="input" value={birthDate} max={todayLocal()} onChange={(e) => setBirthDate(e.target.value)} />}
         <Field label="Mãe (se souber)">
-          <TagInput value={motherTag} onChange={setMotherTag} filter={(t) => t.sex === "F"} placeholder="Brinco da mãe" />
+          <TagInput value={motherTag} onChange={setMotherTag} filter={(t) => t.sex === "F" && t.species === species} placeholder="Brinco da mãe" />
         </Field>
         <Field label="Lote / piquete" hint="Fica selecionado para os próximos.">
           <select

@@ -1,11 +1,23 @@
-# Rebanho — gestão de criação de ovinos em sociedade familiar
+# Rebanho — gestão de criação em sociedade familiar (ovinos e bovinos)
 
-Aplicativo web (PWA, pensado primeiro para celular) para controlar o rebanho, os índices zootécnicos e as finanças de uma criação de ovinos com **duas partes financeiras**:
+Aplicativo web (PWA, pensado primeiro para celular) para controlar o rebanho, os índices zootécnicos e as finanças de uma criação de **ovinos (ovelhas) e bovinos (gado)** com **duas partes financeiras**:
 
 - **Parte A** — o administrador (1/3 por padrão)
 - **Parte B** — os dois irmãos, tratados como uma única parte (2/3 por padrão)
 
 Os três sócios lançam e consultam tudo. O sistema guarda qual irmão pagou cada despesa da Parte B, mas não faz acerto interno entre eles.
+
+## Espécies: ovinos × bovinos
+
+Cada animal tem uma **espécie** (ovino ou bovino) com categorias próprias, e o app segmenta tudo por espécie:
+
+- **Categorias** — ovinos: matriz, reprodutor, cordeiro(a), borrego(a), descarte; bovinos: vaca, touro, bezerro(a), novilho(a), garrote, boi, descarte.
+- **Gestação e previsão de parto** — 150 dias (ovino) e 285 dias (bovino), aplicadas automaticamente conforme a espécie da fêmea.
+- **Promoções automáticas** — ao parir, a fêmea vira matriz/vaca; ao desmamar, a cria vira borrego/novilho.
+- **Telas segmentadas** — filtro de espécie no rebanho e no inventário rápido; o painel de indicadores tem uma chave **Ovelhas / Gado** e calcula efetivo, índices zootécnicos e finanças para a espécie escolhida.
+- **Finanças por espécie** — cada despesa e receita é marcada como **Ovelhas**, **Gado** ou **Geral** (vale para as duas, como sal mineral ou mão de obra). O painel mostra custo e resultado por espécie, contando os lançamentos "geral" nas duas. As vendas de animais herdam a espécie automaticamente.
+- **Saldo único** — o acerto entre as partes continua sendo **um só saldo** (gado e ovelhas somados); a espécie não divide o acerto, apenas organiza custos e resultados.
+- **Importação** — a planilha aceita a coluna `especie` (ovino/bovino); se faltar, a espécie é deduzida da categoria.
 
 **Stack:** Next.js 16 (App Router), TypeScript, PostgreSQL, Drizzle ORM (migrações SQL), Zod, Tailwind CSS 4, Vitest. Compatível com a Vercel (funções serverless + Postgres gerenciado: Neon, Supabase, Vercel Postgres etc.).
 

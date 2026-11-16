@@ -57,11 +57,12 @@ export function PeriodFilter({
   );
 }
 
-export function exportQuery(p: { start?: string | null; end?: string | null; party?: string | null; lotId?: number | null }) {
+export function exportQuery(p: { start?: string | null; end?: string | null; party?: string | null; lotId?: number | null; species?: string | null }) {
   const q = new URLSearchParams();
   if (p.start) q.set("start", p.start);
   if (p.end) q.set("end", p.end);
   if (p.party) q.set("party", p.party);
   if (p.lotId) q.set("lotId", String(p.lotId));
+  if (p.species) q.set("species", p.species);
   return q.toString();
 }

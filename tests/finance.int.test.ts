@@ -118,7 +118,7 @@ d("finanças (integração)", () => {
     const r = await createExpense(db, U.B2, exp(U.B2, 7000, "2025-02-03"));
     await updateExpense(db, U.B2, r.id, { description: "alterada" });
     await deleteExpense(db, U.B2, r.id);
-    const logs = await db.select().from(auditLog).where(eq(auditLog.entityId, r.id));
+    const logs = await db.select().from(auditLog).where(eq(auditLog.entityId, r.id)).orderBy(auditLog.id);
     const mine = logs.filter((l) => l.entity === "expense");
     expect(mine.map((l) => l.action)).toEqual(["create", "update", "delete"]);
     expect((mine[1].before as { description: string }).description).toBe("teste");

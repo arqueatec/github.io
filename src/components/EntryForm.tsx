@@ -1,10 +1,11 @@
 "use client";
 import { useState } from "react";
-import { DeleteButton, Field, FormError, MoneyInput, PhotoInput, SubmitBar, TagInput, todayLocal, useSubmit } from "./forms";
+import { DeleteButton, Field, FormError, MoneyInput, PhotoInput, Segmented, SubmitBar, TagInput, todayLocal, useSubmit } from "./forms";
 import { formatCents, mulFrac } from "@/domain/money";
 
 type U = { id: number; name: string; party: "A" | "B" };
 type Opt = { id: number; name: string };
+type FinSpecies = "ovino" | "bovino" | "ambos";
 
 export interface EntryInitial {
   id: number;
@@ -13,6 +14,7 @@ export interface EntryInitial {
   categoryId: number;
   description: string | null;
   userId: number;
+  species: FinSpecies;
   animalTag?: string | null;
   lotId: number | null;
   receiptId: number | null;
@@ -43,6 +45,7 @@ export function EntryForm({
   const [categoryId, setCategoryId] = useState(initial ? String(initial.categoryId) : "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [userId, setUserId] = useState(String(initial?.userId ?? currentUserId));
+  const [species, setSpecies] = useState<FinSpecies>(initial?.species ?? "ambos");
   const [animalTag, setAnimalTag] = useState(initial?.animalTag ?? "");
   const [lotId, setLotId] = useState(initial?.lotId ? String(initial.lotId) : "");
   const [receipt, setReceipt] = useState<{ mime: "image/jpeg"; base64: string } | null>(null);
@@ -72,6 +75,7 @@ export function EntryForm({
           amountCents: amount,
           categoryId: Number(categoryId),
           description,
+          species,
           lotId: lotId ? Number(lotId) : null,
           receipt,
           [isExp ? "paidByUserId" : "receivedByUserId"]: Number(userId),
@@ -116,6 +120,17 @@ export function EntryForm({
               </option>
             ))}
           </select>
+        </Field>
+        <Field label="A que se refere" hint="Use Geral quando valer para os dois (ex.: sal mineral, mão de obra).">
+          <Segmented
+            value={species}
+            onChange={setSpecies}
+            options={[
+              { value: "ovino", label: "🐑 Ovelhas" },
+              { value: "bovino", label: "🐄 Gado" },
+              { value: "ambos", label: "Geral" },
+            ]}
+          />
         </Field>
         <Field label="Descrição">
           <input className="input" value={description} onChange={(e) => setDescription(e.target.value)} placeholder={isExp ? "Ex.: 2 sacos de sal mineral" : "Ex.: venda de 40 kg de lã"} />

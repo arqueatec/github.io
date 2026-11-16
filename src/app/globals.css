@@ -176,14 +176,17 @@ body {
     @apply flex w-full overflow-hidden rounded-lg border;
     border-color: var(--border);
   }
-  .segmented button {
-    @apply min-h-12 flex-1 px-2 text-sm font-medium;
+  .segmented button,
+  .segmented a {
+    @apply flex min-h-12 flex-1 items-center justify-center px-2 text-center text-sm font-medium;
     background: var(--surface);
   }
-  .segmented button + button {
+  .segmented button + button,
+  .segmented a + a {
     border-left: 1px solid var(--border);
   }
-  .segmented button.active {
+  .segmented button.active,
+  .segmented a.active {
     background: var(--primary);
     color: var(--primary-text);
   }

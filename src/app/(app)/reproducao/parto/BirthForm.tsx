@@ -72,7 +72,10 @@ export function BirthForm({ initialEwe, lots }: { initialEwe: string; lots: { id
             offline: `Parto de ${eweTag}`,
             success: `Parto de ${eweTag} registrado`,
             onSuccess: () => {
-              for (const l of tagged) addLocalTag({ tag: l.tag.trim(), sex: l.sex, category: "cordeiro", status: "ativo" });
+              const dam = findTag(tags, eweTag);
+              const sp = dam?.species ?? "ovino";
+              const youngCat = sp === "bovino" ? "bezerro" : "cordeiro";
+              for (const l of tagged) addLocalTag({ tag: l.tag.trim(), species: sp, sex: l.sex, category: youngCat, status: "ativo" });
               setEweTag("");
               setLambs([{ tag: "", sex: "F", weightKg: "" }]);
               setBornAlive(1);
