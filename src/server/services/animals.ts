@@ -26,13 +26,23 @@ import { findAnimalByTag, saveAttachment } from "./common";
 type Category = (typeof animals.$inferSelect)["category"];
 type Species = (typeof animals.$inferSelect)["species"];
 
-async function resolveParent(db: Exec, tag: string | null | undefined, sex: "M" | "F", selfTag?: string) {
-  if (!tag) return null;
-  if (selfTag && tag.toLowerCase() === selfTag.toLowerCase()) throw new AppError("O animal não pode ser pai/mãe de si mesmo");
-  const p = await findAnimalByTag(db, tag);
-  if (!p) throw new NotFoundError(`${sex === "F" ? "Mãe" : "Pai"} com brinco ${tag} não encontrado(a)`);
-  if (p.sex !== sex) throw new AppError(`Brinco ${tag} não é ${sex === "F" ? "fêmea" : "macho"}`);
-  return p.id;
+/**
+ * Resolve pai/mãe informado como texto: se corresponder a um animal do rebanho, vincula (id);
+ * caso contrário guarda o texto como nome do pai/mãe de fora (ex.: animal PO/pedigree).
+ */
+async function resolveParentRef(
+  db: Exec,
+  value: string | null | undefined,
+  sex: "M" | "F",
+  selfTag?: string,
+): Promise<{ id: number | null; name: string | null }> {
+  const v = value?.trim();
+  if (!v) return { id: null, name: null };
+  if (selfTag && v.toLowerCase() === selfTag.toLowerCase()) throw new AppError("O animal não pode ser pai/mãe de si mesmo");
+  const p = await findAnimalByTag(db, v);
+  if (!p) return { id: null, name: v }; // não é do rebanho: registra só o nome
+  if (p.sex !== sex) throw new AppError(`Brinco ${v} não é ${sex === "F" ? "fêmea" : "macho"}`);
+  return { id: p.id, name: null };
 }
 
 /** Cria um animal dentro de uma transação. Usado pelo cadastro, inventário, parto e importação. */
@@ -59,8 +69,11 @@ export async function insertAnimal(tx: Exec, actor: Actor, input: AnimalCreate &
       breed: input.breed ?? null,
       birthDate,
       birthDateEstimated: estimated,
-      motherId: await resolveParent(tx, input.motherTag, "F", input.tag),
-      fatherId: await resolveParent(tx, input.fatherTag, "M", input.tag),
+      ...(await (async () => {
+        const m = await resolveParentRef(tx, input.motherTag, "F", input.tag);
+        const f = await resolveParentRef(tx, input.fatherTag, "M", input.tag);
+        return { motherId: m.id, motherName: m.name, fatherId: f.id, fatherName: f.name };
+      })()),
       birthId: input.birthId ?? null,
       category: input.category,
       lotId: input.lotId ?? null,
@@ -122,8 +135,16 @@ export async function updateAnimal(db: DB, actor: Actor, id: number, raw: unknow
       if (input.breed !== undefined) patch.breed = input.breed;
       if (input.birthDate !== undefined) patch.birthDate = input.birthDate;
       if (input.birthDateEstimated !== undefined) patch.birthDateEstimated = input.birthDateEstimated;
-      if (input.motherTag !== undefined) patch.motherId = await resolveParent(tx, input.motherTag, "F", before.tag);
-      if (input.fatherTag !== undefined) patch.fatherId = await resolveParent(tx, input.fatherTag, "M", before.tag);
+      if (input.motherTag !== undefined) {
+        const m = await resolveParentRef(tx, input.motherTag, "F", before.tag);
+        patch.motherId = m.id;
+        patch.motherName = m.name;
+      }
+      if (input.fatherTag !== undefined) {
+        const f = await resolveParentRef(tx, input.fatherTag, "M", before.tag);
+        patch.fatherId = f.id;
+        patch.fatherName = f.name;
+      }
       if (input.entryDate) patch.entryDate = input.entryDate;
       if (input.notes !== undefined) patch.notes = input.notes;
       if (input.photo) patch.photoId = await saveAttachment(tx, input.photo, actor.id);
@@ -266,6 +287,9 @@ export async function genealogy(db: Exec, id: number) {
   return {
     mother,
     father,
+    /** Nome do pai/mãe de fora do rebanho (quando não há animal vinculado). */
+    motherName: a.motherName,
+    fatherName: a.fatherName,
     maternalGrandmother: g(mother?.motherId),
     maternalGrandfather: g(mother?.fatherId),
     paternalGrandmother: g(father?.motherId),

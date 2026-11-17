@@ -264,6 +264,8 @@ export async function previewImport(db: DB, rows: ImportRow[]) {
   const inFile = new Map(rows.map((r) => [r.tag.toLowerCase(), r]));
   for (const r of rows) {
     if (r.tag && (await findAnimalByTag(db, r.tag))) r.errors.push("Brinco já cadastrado no sistema");
+    // Pai/mãe não encontrados no rebanho nem na planilha são guardados como nome (animal de fora/PO),
+    // então não bloqueiam a importação; só validamos o sexo quando o parente existe.
     for (const [label, t, sex] of [["Mãe", r.motherTag, "F"], ["Pai", r.fatherTag, "M"]] as const) {
       if (!t) continue;
       const f = inFile.get(t.toLowerCase());
@@ -272,8 +274,7 @@ export async function previewImport(db: DB, rows: ImportRow[]) {
         continue;
       }
       const a = await findAnimalByTag(db, t);
-      if (!a) r.errors.push(`${label} ${t} não encontrado(a)`);
-      else if (a.sex !== sex) r.errors.push(`${label} ${t} com sexo incompatível`);
+      if (a && a.sex !== sex) r.errors.push(`${label} ${t} com sexo incompatível`);
     }
     const parsed = animalCreateSchema.safeParse({ tag: r.tag, species: r.species, sex: r.sex, category: r.category, breed: r.breed });
     if (!parsed.success) for (const iss of parsed.error.issues) if (!r.errors.includes(iss.message)) r.errors.push(iss.message);
@@ -309,14 +310,18 @@ export async function commitImport(db: DB, actor: Actor, rows: ImportRow[]) {
       });
       created.set(r.tag.toLowerCase(), a.id);
     }
-    // segunda passada: genealogia (pais podem estar na própria planilha)
+    // segunda passada: genealogia (pais podem estar na própria planilha ou ser de fora do rebanho)
     for (const r of rows) {
       const id = created.get(r.tag.toLowerCase())!;
       const resolve = async (t: string | null) =>
         t ? created.get(t.toLowerCase()) ?? (await findAnimalByTag(tx, t))?.id ?? null : null;
       const motherId = await resolve(r.motherTag);
       const fatherId = await resolve(r.fatherTag);
-      if (motherId || fatherId) await tx.update(animals).set({ motherId, fatherId }).where(eq(animals.id, id));
+      // vincula quando encontrado; senão guarda o nome informado (pai/mãe de fora)
+      const motherName = !motherId && r.motherTag ? r.motherTag : null;
+      const fatherName = !fatherId && r.fatherTag ? r.fatherTag : null;
+      if (motherId || fatherId || motherName || fatherName)
+        await tx.update(animals).set({ motherId, fatherId, motherName, fatherName }).where(eq(animals.id, id));
     }
     await audit(tx, actor.id, "animal_import", null, "create", null, { count: rows.length, tags: rows.map((r) => r.tag) });
     return { imported: rows.length };

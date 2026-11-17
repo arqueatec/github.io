@@ -175,11 +175,11 @@ export function AnimalForm({ lots, initial, defaultTag }: { lots: Lot[]; initial
           </Field>
         )}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Mãe (brinco)" hint="Opcional">
-            <TagInput value={f.motherTag} onChange={(v) => set("motherTag", v)} filter={(t) => t.sex === "F" && t.species === f.species} placeholder="Desconhecida" />
+          <Field label="Mãe" hint="Brinco do rebanho ou nome/registro de fora (PO)">
+            <TagInput value={f.motherTag} onChange={(v) => set("motherTag", v)} filter={(t) => t.sex === "F" && t.species === f.species} placeholder="Brinco ou nome" mustExist={false} />
           </Field>
-          <Field label="Pai (brinco)" hint="Opcional">
-            <TagInput value={f.fatherTag} onChange={(v) => set("fatherTag", v)} filter={(t) => t.sex === "M" && t.species === f.species} placeholder="Desconhecido" />
+          <Field label="Pai" hint="Brinco do rebanho ou nome/registro de fora (PO)">
+            <TagInput value={f.fatherTag} onChange={(v) => set("fatherTag", v)} filter={(t) => t.sex === "M" && t.species === f.species} placeholder="Brinco ou nome" mustExist={false} />
           </Field>
         </div>
         <Field label="Lote / piquete">
