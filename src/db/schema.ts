@@ -178,6 +178,8 @@ export const animals = pgTable(
     status: animalStatusEnum("status").notNull().default("ativo"),
     lotId: integer("lot_id").references(() => lots.id),
     origin: animalOriginEnum("origin").notNull().default("inventario"),
+    /** Preço/valor unitário do animal (compra ou avaliação), em centavos. Opcional, informativo. */
+    priceCents: integer("price_cents"),
     /** Data em que o animal passou a fazer parte do efetivo controlado pelo sistema. */
     entryDate: date("entry_date").notNull(),
     exitDate: date("exit_date"),
