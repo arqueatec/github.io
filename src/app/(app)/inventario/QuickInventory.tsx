@@ -188,8 +188,8 @@ export function QuickInventory({ lots, initialTotal, target }: { lots: { id: num
           </div>
         )}
         {ageMode === "data" && <input type="date" className="input" value={birthDate} max={todayLocal()} onChange={(e) => setBirthDate(e.target.value)} />}
-        <Field label="Mãe (se souber)">
-          <TagInput value={motherTag} onChange={setMotherTag} filter={(t) => t.sex === "F" && t.species === species} placeholder="Brinco da mãe" />
+        <Field label="Mãe (se souber)" hint="Brinco do rebanho ou nome de fora (PO)">
+          <TagInput value={motherTag} onChange={setMotherTag} filter={(t) => t.sex === "F" && t.species === species} placeholder="Brinco ou nome" mustExist={false} />
         </Field>
         <Field label="Lote / piquete" hint="Fica selecionado para os próximos.">
           <select

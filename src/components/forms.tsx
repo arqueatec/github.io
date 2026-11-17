@@ -240,14 +240,31 @@ export function TagListInput({
 }
 
 export function PhotoInput({ value, onChange, label = "Foto (opcional)" }: { value: { mime: string; base64: string } | null; onChange: (v: { mime: "image/jpeg"; base64: string } | null) => void; label?: string }) {
-  const ref = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    setBusy(true);
+    try {
+      onChange(await compressImage(f));
+    } catch {
+      toast("Não foi possível ler a foto", "err");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="field">
       <span className="field-label">{label}</span>
-      <div className="flex items-center gap-3">
-        <button type="button" className="btn btn-secondary" onClick={() => ref.current?.click()} disabled={busy}>
-          📷 {value ? "Trocar foto" : "Tirar/escolher foto"}
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className="btn btn-secondary" onClick={() => cameraRef.current?.click()} disabled={busy}>
+          📷 Câmera
+        </button>
+        <button type="button" className="btn btn-secondary" onClick={() => galleryRef.current?.click()} disabled={busy}>
+          🖼️ Galeria
         </button>
         {value && (
           <>
@@ -259,26 +276,10 @@ export function PhotoInput({ value, onChange, label = "Foto (opcional)" }: { val
           </>
         )}
       </div>
-      <input
-        ref={ref}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={async (e) => {
-          const f = e.target.files?.[0];
-          if (!f) return;
-          setBusy(true);
-          try {
-            onChange(await compressImage(f));
-          } catch {
-            toast("Não foi possível ler a foto", "err");
-          } finally {
-            setBusy(false);
-            e.target.value = "";
-          }
-        }}
-      />
+      {/* Câmera: usa `capture` para abrir a câmera direto. */}
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
+      {/* Galeria: SEM `capture`, abre o seletor de imagens do aparelho. */}
+      <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
     </div>
   );
 }

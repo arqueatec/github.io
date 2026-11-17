@@ -170,6 +170,9 @@ export const animals = pgTable(
     birthDateEstimated: boolean("birth_date_estimated").notNull().default(false),
     motherId: integer("mother_id").references((): AnyPgColumn => animals.id, { onDelete: "set null" }),
     fatherId: integer("father_id").references((): AnyPgColumn => animals.id, { onDelete: "set null" }),
+    /** Nome/registro do pai e da mãe quando NÃO estão no rebanho (ex.: animal PO/pedigree). */
+    motherName: text("mother_name"),
+    fatherName: text("father_name"),
     birthId: integer("birth_id"),
     category: animalCategoryEnum("category").notNull(),
     status: animalStatusEnum("status").notNull().default("ativo"),

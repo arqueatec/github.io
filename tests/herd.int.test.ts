@@ -143,6 +143,35 @@ d("rebanho (integração)", () => {
     await expect(commitImport(db, U.A, bad)).rejects.toThrow(/linha\(s\) com erro/);
   });
 
+  it("pai/mãe de fora do rebanho (PO) ficam registrados como nome, sem exigir cadastro", async () => {
+    const r = await createAnimal(db, U.A, {
+      tag: "PO1",
+      species: "bovino",
+      sex: "F",
+      category: "vaca",
+      ageMonths: 30,
+      motherTag: "Estrela da Serra FIV",
+      fatherTag: "REM Elo PO 12345",
+      entryDate: "2026-01-01",
+    });
+    const [a] = await db.select().from(animals).where(eq(animals.id, r.id));
+    expect(a.motherId).toBeNull();
+    expect(a.fatherId).toBeNull();
+    expect(a.motherName).toBe("Estrela da Serra FIV");
+    expect(a.fatherName).toBe("REM Elo PO 12345");
+    // trocar a mãe para uma vaca do rebanho vincula e limpa o nome externo
+    const vmae = await createAnimal(db, U.A, { tag: "VMAE", species: "bovino", sex: "F", category: "vaca", ageMonths: 60, entryDate: "2026-01-01" });
+    await updateAnimal(db, U.A, r.id, { motherTag: "VMAE" });
+    const [a2] = await db.select().from(animals).where(eq(animals.id, r.id));
+    expect(a2.motherId).toBe(vmae.id);
+    expect(a2.motherName).toBeNull();
+    // limpar o pai remove o nome
+    await updateAnimal(db, U.A, r.id, { fatherTag: "" });
+    const [a3] = await db.select().from(animals).where(eq(animals.id, r.id));
+    expect(a3.fatherId).toBeNull();
+    expect(a3.fatherName).toBeNull();
+  });
+
   it("autenticação: login, sessão válida e bloqueio por tentativas", async () => {
     await expect(login(db, "b1@t.com", "errada")).rejects.toThrow(/inválidos/);
     const { token } = await login(db, "B1@t.com", "senha-teste-123");

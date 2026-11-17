@@ -117,20 +117,28 @@ export default async function AnimalPage({ params }: { params: Promise<{ id: str
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-lg bg-[var(--surface-2)] p-3">
                 <div className="text-xs text-[var(--muted)]">Mãe</div>
-                <div className="font-semibold"><AnimalLink a={gen.mother} empty="desconhecida" /></div>
-                <div className="mt-1 text-xs text-[var(--muted)]">
-                  Avó: <AnimalLink a={gen.maternalGrandmother} empty="—" /> · Avô: <AnimalLink a={gen.maternalGrandfather} empty="—" />
+                <div className="font-semibold">
+                  {gen.mother ? <AnimalLink a={gen.mother} /> : gen.motherName ? <span>{gen.motherName} <span className="text-xs font-normal text-[var(--muted)]">(fora do rebanho)</span></span> : <span className="text-[var(--muted)]">desconhecida</span>}
                 </div>
+                {gen.mother && (
+                  <div className="mt-1 text-xs text-[var(--muted)]">
+                    Avó: <AnimalLink a={gen.maternalGrandmother} empty="—" /> · Avô: <AnimalLink a={gen.maternalGrandfather} empty="—" />
+                  </div>
+                )}
               </div>
               <div className="rounded-lg bg-[var(--surface-2)] p-3">
                 <div className="text-xs text-[var(--muted)]">Pai</div>
-                <div className="font-semibold"><AnimalLink a={gen.father} /></div>
-                <div className="mt-1 text-xs text-[var(--muted)]">
-                  Avó: <AnimalLink a={gen.paternalGrandmother} empty="—" /> · Avô: <AnimalLink a={gen.paternalGrandfather} empty="—" />
+                <div className="font-semibold">
+                  {gen.father ? <AnimalLink a={gen.father} /> : gen.fatherName ? <span>{gen.fatherName} <span className="text-xs font-normal text-[var(--muted)]">(fora do rebanho)</span></span> : <span className="text-[var(--muted)]">desconhecido</span>}
                 </div>
+                {gen.father && (
+                  <div className="mt-1 text-xs text-[var(--muted)]">
+                    Avó: <AnimalLink a={gen.paternalGrandmother} empty="—" /> · Avô: <AnimalLink a={gen.paternalGrandfather} empty="—" />
+                  </div>
+                )}
               </div>
             </div>
-            {!gen.mother && !gen.father && a.origin !== "nascimento" && (
+            {!gen.mother && !gen.father && !gen.motherName && !gen.fatherName && a.origin !== "nascimento" && (
               <p className="text-xs text-[var(--muted)]">Animal anterior ao sistema: genealogia desconhecida.</p>
             )}
             <div>

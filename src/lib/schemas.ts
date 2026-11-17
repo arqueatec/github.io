@@ -20,6 +20,10 @@ export const tagSchema = z
   .max(30, "Brinco muito longo")
   .regex(/^[\p{L}\p{N}\-_. /]+$/u, "Brinco com caracteres inválidos");
 export const optTag = z.preprocess((v) => (typeof v === "string" ? v.trim() || null : emptyToNull(v)), tagSchema.nullable()).optional();
+/** Pai/mãe: aceita um brinco do rebanho OU um nome/registro livre (animal de fora, PO/pedigree). */
+export const optParent = z
+  .preprocess((v) => (typeof v === "string" ? v.trim() || null : emptyToNull(v)), z.string().max(80, "Nome muito longo").nullable())
+  .optional();
 
 export const cents = z.number().int("Valor deve estar em centavos").positive("Valor deve ser maior que zero").max(100_000_000_00);
 export const optKg = z.preprocess(emptyToNull, z.coerce.number().min(0).max(500).nullable()).optional();
@@ -69,8 +73,8 @@ export const animalCreateSchema = z
     /** Idade estimada em meses quando a data de nascimento é desconhecida. */
     ageMonths: z.preprocess(emptyToNull, z.coerce.number().min(0).max(240).nullable()).optional(),
     birthDateEstimated: z.boolean().optional(),
-    motherTag: optTag,
-    fatherTag: optTag,
+    motherTag: optParent,
+    fatherTag: optParent,
     category: z.enum(CATEGORY),
     lotId: optInt,
     origin: z.enum(ORIGIN).optional(),
@@ -97,8 +101,8 @@ export const animalUpdateSchema = z.object({
   breed: optText(60),
   birthDate: optDate,
   birthDateEstimated: z.boolean().optional(),
-  motherTag: optTag,
-  fatherTag: optTag,
+  motherTag: optParent,
+  fatherTag: optParent,
   category: z.enum(CATEGORY).optional(),
   /** Data da mudança de categoria/lote (padrão: hoje). */
   changeDate: optDate,
