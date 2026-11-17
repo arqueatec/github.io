@@ -30,6 +30,7 @@ export default async function EditarAnimal({ params }: { params: Promise<{ id: s
           category: a.category,
           lotId: a.lotId,
           entryDate: a.entryDate,
+          priceCents: a.priceCents,
           notes: a.notes,
         }}
       />

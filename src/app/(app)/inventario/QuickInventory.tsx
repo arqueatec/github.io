@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { apiSend, ApiError } from "@/lib/client/api";
 import { addLocalTag, findTag, useTags } from "@/lib/client/tags";
-import { Field, FormError, PhotoInput, Segmented, TagInput, toast, todayLocal } from "@/components/forms";
+import { Field, FormError, MoneyInput, PhotoInput, Segmented, TagInput, toast, todayLocal } from "@/components/forms";
 import { categoryLabel, SPECIES_LABEL } from "@/lib/labels";
 import { categoriesForSex, type Species } from "@/domain/species";
 import { cx } from "@/components/ui";
@@ -32,6 +32,7 @@ export function QuickInventory({ lots, initialTotal, target }: { lots: { id: num
   const [motherTag, setMotherTag] = useState("");
   const [lotId, setLotId] = useState<string>("");
   const [notes, setNotes] = useState("");
+  const [price, setPrice] = useState<number | null>(null);
   const [photo, setPhoto] = useState<{ mime: "image/jpeg"; base64: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +102,7 @@ export function QuickInventory({ lots, initialTotal, target }: { lots: { id: num
           lotId: lotId ? Number(lotId) : null,
           origin: "inventario",
           entryDate: todayLocal(),
+          priceCents: price,
           notes: notes || (ageMode === "idade" ? "Idade estimada no inventário" : null),
           photo,
         },
@@ -112,6 +114,7 @@ export function QuickInventory({ lots, initialTotal, target }: { lots: { id: num
       setTag("");
       setMotherTag("");
       setNotes("");
+      setPrice(null);
       setPhoto(null);
       tagRef.current?.focus();
     } catch (err) {
@@ -209,6 +212,9 @@ export function QuickInventory({ lots, initialTotal, target }: { lots: { id: num
               </option>
             ))}
           </select>
+        </Field>
+        <Field label="Preço / valor (opcional)" hint="Quanto foi pago por este animal, se souber.">
+          <MoneyInput cents={price} onChange={setPrice} />
         </Field>
         <details>
           <summary className="cursor-pointer text-sm font-medium text-[var(--primary)]">Foto e observações</summary>

@@ -91,6 +91,7 @@ export default async function AnimalPage({ params }: { params: Promise<{ id: str
             <div><dt className="text-xs text-[var(--muted)]">Idade</dt><dd>{ageLabel(a.birthDate, a.exitDate ?? today, a.birthDateEstimated)}</dd></div>
             <div><dt className="text-xs text-[var(--muted)]">Origem</dt><dd>{ORIGIN_LABEL[a.origin]}</dd></div>
             <div><dt className="text-xs text-[var(--muted)]">Entrada</dt><dd>{formatDateBR(a.entryDate)}</dd></div>
+            {a.priceCents != null && <div><dt className="text-xs text-[var(--muted)]">Preço/valor</dt><dd>{formatCents(a.priceCents)}</dd></div>}
             {a.exitDate && <div><dt className="text-xs text-[var(--muted)]">Saída</dt><dd>{formatDateBR(a.exitDate)}</dd></div>}
           </dl>
         </div>

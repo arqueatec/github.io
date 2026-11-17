@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import type { DB } from "@/db";
 import { animals, lots } from "@/db/schema";
 import { isIsoDate, todayIso } from "@/domain/dates";
+import { parseMoneyToCents } from "@/domain/money";
 import { assert, canWriteHerd, type Actor } from "@/domain/policy";
 import { categoriesFor } from "@/domain/species";
 import { animalCreateSchema, CATEGORY } from "@/lib/schemas";
@@ -87,6 +88,7 @@ export interface ImportRow {
   fatherTag: string | null;
   lotName: string | null;
   entryDate: string | null;
+  priceCents: number | null;
   notes: string | null;
   errors: string[];
 }
@@ -110,6 +112,7 @@ const HEADER_ALIASES: Record<string, string[]> = {
   fatherTag: ["pai", "brincopai", "reprodutor"],
   lotName: ["lote", "piquete", "lotepiquete"],
   entryDate: ["entrada", "dataentrada", "datadeentrada"],
+  price: ["preco", "valor", "precounitario", "valorunitario", "precocompra", "valorcompra", "price"],
   notes: ["observacoes", "obs", "observacao", "notas"],
 };
 
@@ -240,6 +243,9 @@ export async function parseHerdSheet(file: { name: string; buffer: Buffer }): Pr
     const ageRaw = get("ageMonths").replace(",", ".");
     const ageMonths = ageRaw ? Number(ageRaw) : null;
     if (ageRaw && (!Number.isFinite(ageMonths) || ageMonths! < 0)) errors.push("Idade inválida");
+    const priceRaw = get("price");
+    const priceCents = priceRaw ? parseMoneyToCents(priceRaw) : null;
+    if (priceRaw && (priceCents === null || priceCents < 0)) errors.push("Preço inválido");
     return {
       line: i + 2,
       tag,
@@ -253,6 +259,7 @@ export async function parseHerdSheet(file: { name: string; buffer: Buffer }): Pr
       fatherTag: get("fatherTag") || null,
       lotName: get("lotName") || null,
       entryDate: ed === "invalid" ? null : ed,
+      priceCents: priceCents && priceCents > 0 ? priceCents : null,
       notes: get("notes") || null,
       errors,
     };
@@ -306,6 +313,7 @@ export async function commitImport(db: DB, actor: Actor, rows: ImportRow[]) {
         lotId: r.lotName ? lotIds.get(r.lotName.toLowerCase()) : null,
         origin: "importacao",
         entryDate: r.entryDate ?? todayIso(),
+        priceCents: r.priceCents,
         notes: r.notes,
       });
       created.set(r.tag.toLowerCase(), a.id);
@@ -329,8 +337,8 @@ export async function commitImport(db: DB, actor: Actor, rows: ImportRow[]) {
 }
 
 export const IMPORT_TEMPLATE =
-  "﻿brinco;especie;sexo;categoria;raca;nascimento;idade_meses;mae;pai;lote;entrada;observacoes\n" +
-  "101;ovino;F;matriz;Santa Inês;;36;;;Piquete 1;;Idade estimada\n" +
-  "102;ovino;F;borrego;Dorper;15/03/2025;;101;R1;Piquete 1;;\n" +
-  "V01;bovino;F;vaca;Nelore;;48;;;Pasto 1;;\n" +
-  "B01;bovino;M;bezerro;Nelore;10/02/2026;;V01;;Pasto 1;;\n";
+  "﻿brinco;especie;sexo;categoria;raca;nascimento;idade_meses;mae;pai;lote;entrada;preco;observacoes\n" +
+  "101;ovino;F;matriz;Santa Inês;;36;;;Piquete 1;;450,00;Idade estimada\n" +
+  "102;ovino;F;borrego;Dorper;15/03/2025;;101;R1;Piquete 1;;;\n" +
+  "V01;bovino;F;vaca;Nelore;;48;;;Pasto 1;;3500,00;\n" +
+  "B01;bovino;M;bezerro;Nelore;10/02/2026;;V01;;Pasto 1;;;\n";

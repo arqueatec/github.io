@@ -15,7 +15,7 @@ export default async function RelatoriosPage() {
       </Card>
       <Card title="Importar rebanho por planilha">
         <p className="mb-3 text-sm text-[var(--muted)]">
-          Aceita CSV (separado por ; ou ,) ou Excel .xlsx com cabeçalho. Colunas reconhecidas: <b>brinco</b>, <b>especie</b> (ovino/bovino — ou será deduzida pela categoria), <b>sexo</b> (M/F), <b>categoria</b>, raca, nascimento (dd/mm/aaaa), idade_meses, mae, pai, lote, entrada, observacoes.
+          Aceita CSV (separado por ; ou ,) ou Excel .xlsx com cabeçalho. Colunas reconhecidas: <b>brinco</b>, <b>especie</b> (ovino/bovino — ou será deduzida pela categoria), <b>sexo</b> (M/F), <b>categoria</b>, raca, nascimento (dd/mm/aaaa), idade_meses, mae, pai, lote, entrada, preco, observacoes.
           A importação valida tudo antes e grava tudo ou nada. Lotes inexistentes são criados.
         </p>
         <ImportSheet />

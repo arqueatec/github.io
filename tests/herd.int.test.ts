@@ -152,9 +152,11 @@ d("rebanho (integração)", () => {
       ageMonths: 30,
       motherTag: "Estrela da Serra FIV",
       fatherTag: "REM Elo PO 12345",
+      priceCents: 350000,
       entryDate: "2026-01-01",
     });
     const [a] = await db.select().from(animals).where(eq(animals.id, r.id));
+    expect(a.priceCents).toBe(350000);
     expect(a.motherId).toBeNull();
     expect(a.fatherId).toBeNull();
     expect(a.motherName).toBe("Estrela da Serra FIV");

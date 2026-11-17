@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Field, FormError, PhotoInput, Segmented, SubmitBar, TagInput, todayLocal, useSubmit } from "./forms";
+import { Field, FormError, MoneyInput, PhotoInput, Segmented, SubmitBar, TagInput, todayLocal, useSubmit } from "./forms";
 import { addLocalTag, findTag, useTags } from "@/lib/client/tags";
 import { categoryLabel, SPECIES_LABEL } from "@/lib/labels";
 import { categoriesForSex, type Species } from "@/domain/species";
@@ -19,6 +19,7 @@ export interface AnimalInitial {
   category: string;
   lotId: number | null;
   entryDate: string;
+  priceCents: number | null;
   notes: string | null;
 }
 
@@ -53,6 +54,7 @@ export function AnimalForm({ lots, initial, defaultTag }: { lots: Lot[]; initial
     notes: initial?.notes ?? "",
   });
   const [photo, setPhoto] = useState<{ mime: "image/jpeg"; base64: string } | null>(null);
+  const [price, setPrice] = useState<number | null>(initial?.priceCents ?? null);
   const { submit, busy, error, setError } = useSubmit<{ id: number }>();
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
   const dup = !edit && f.tag && findTag(tags, f.tag);
@@ -78,6 +80,7 @@ export function AnimalForm({ lots, initial, defaultTag }: { lots: Lot[]; initial
           category: f.category,
           lotId: f.lotId ? Number(f.lotId) : null,
           entryDate: f.entryDate,
+          priceCents: price,
           notes: f.notes,
           photo,
         };
@@ -203,6 +206,9 @@ export function AnimalForm({ lots, initial, defaultTag }: { lots: Lot[]; initial
         )}
         <Field label="Data de entrada no sistema" hint="Para animais do inventário, a data em que foram anotados.">
           <input type="date" className="input" value={f.entryDate} max={todayLocal()} onChange={(e) => set("entryDate", e.target.value)} />
+        </Field>
+        <Field label="Preço / valor do animal (opcional)" hint="Quanto foi pago ou o valor estimado deste animal. Não lança despesa automática.">
+          <MoneyInput cents={price} onChange={setPrice} />
         </Field>
         {(categoryChanged || lotChanged) && (
           <Field label="Data da mudança de categoria/lote" hint="Fica registrada no histórico e na evolução do efetivo.">

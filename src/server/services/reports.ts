@@ -66,6 +66,7 @@ export async function buildReport(db: Exec, kind: string, f: ReportFilter): Prom
           { key: "origin", label: "Origem" },
           { key: "entryDate", label: "Entrada" },
           { key: "exitDate", label: "Saída" },
+          { key: "price", label: "Preço/valor (R$)" },
         ],
         rows: rows.map((a) => ({
           tag: a.tag,
@@ -80,6 +81,7 @@ export async function buildReport(db: Exec, kind: string, f: ReportFilter): Prom
           origin: ORIGIN_LABEL[a.origin],
           entryDate: formatDateBR(a.entryDate),
           exitDate: a.exitDate ? formatDateBR(a.exitDate) : "",
+          price: centsCell(a.priceCents),
         })),
         summary: [`${rows.filter((r) => r.status === "ativo").length} animais ativos de ${rows.length} cadastrados`],
       };

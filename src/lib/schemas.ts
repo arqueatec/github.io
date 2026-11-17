@@ -26,6 +26,8 @@ export const optParent = z
   .optional();
 
 export const cents = z.number().int("Valor deve estar em centavos").positive("Valor deve ser maior que zero").max(100_000_000_00);
+/** Valor opcional em centavos (ex.: preço do animal). */
+export const optCents = z.preprocess(emptyToNull, z.coerce.number().int().positive().max(100_000_000_00).nullable()).optional();
 export const optKg = z.preprocess(emptyToNull, z.coerce.number().min(0).max(500).nullable()).optional();
 
 export const photoSchema = z
@@ -79,6 +81,7 @@ export const animalCreateSchema = z
     lotId: optInt,
     origin: z.enum(ORIGIN).optional(),
     entryDate: optDate,
+    priceCents: optCents,
     notes: optText(1000),
     photo: photoSchema,
   })
@@ -108,6 +111,7 @@ export const animalUpdateSchema = z.object({
   changeDate: optDate,
   lotId: optInt,
   entryDate: optDate,
+  priceCents: optCents,
   notes: optText(1000),
   photo: photoSchema,
 });

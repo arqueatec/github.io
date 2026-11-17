@@ -79,6 +79,7 @@ export async function insertAnimal(tx: Exec, actor: Actor, input: AnimalCreate &
       lotId: input.lotId ?? null,
       origin: input.origin ?? "inventario",
       entryDate,
+      priceCents: input.priceCents ?? null,
       photoId: await saveAttachment(tx, input.photo, actor.id),
       notes: input.notes ?? null,
       createdBy: actor.id,
@@ -146,6 +147,7 @@ export async function updateAnimal(db: DB, actor: Actor, id: number, raw: unknow
         patch.fatherName = f.name;
       }
       if (input.entryDate) patch.entryDate = input.entryDate;
+      if (input.priceCents !== undefined) patch.priceCents = input.priceCents;
       if (input.notes !== undefined) patch.notes = input.notes;
       if (input.photo) patch.photoId = await saveAttachment(tx, input.photo, actor.id);
       const sex = input.sex ?? before.sex;
@@ -237,6 +239,7 @@ export async function listAnimals(db: Exec, f: AnimalFilter = {}) {
       exitDate: animals.exitDate,
       motherId: animals.motherId,
       origin: animals.origin,
+      priceCents: animals.priceCents,
     })
     .from(animals)
     .leftJoin(lots, eq(lots.id, animals.lotId))
