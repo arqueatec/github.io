@@ -24,6 +24,7 @@ export default async function DespesasPage({ searchParams }: { searchParams: Pro
     lotId: spInt(p, "lotId"),
     categoryId: spInt(p, "categoryId"),
     species: (species === "ovino" || species === "bovino" ? species : null) as "ovino" | "bovino" | null,
+    status: "pago" as const,
   };
   const [rows, lots, cats, lockedUntil] = await Promise.all([listExpenses(db, f), listLots(db), activeCategories(db, "despesa"), getLockedUntil(db)]);
   const total = rows.reduce((s, r) => s + r.amountCents, 0);
@@ -37,6 +38,7 @@ export default async function DespesasPage({ searchParams }: { searchParams: Pro
         actions={
           <>
             <LinkButton href="/financeiro/despesas/nova">+ Despesa</LinkButton>
+            <LinkButton href="/financeiro/contas-a-pagar" variant="secondary">Contas a pagar</LinkButton>
             <LinkButton href={`/api/export/despesas?format=csv&${q}`} variant="secondary" prefetch={false}>CSV</LinkButton>
             <LinkButton href={`/api/export/despesas?format=pdf&${q}`} variant="secondary" prefetch={false}>PDF</LinkButton>
           </>

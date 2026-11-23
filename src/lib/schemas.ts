@@ -250,21 +250,51 @@ export type SaleCreate = z.infer<typeof saleCreateSchema>;
 
 // ---------------------------------------------------------------- Finanças
 
-export const expenseCreateSchema = z.object({
-  clientRef,
-  date: isoDate,
-  amountCents: cents,
-  categoryId: z.coerce.number().int().positive("Escolha a categoria"),
-  description: optText(300),
-  paidByUserId: z.coerce.number().int().positive("Informe quem pagou"),
-  species: z.enum(FINANCE_SPECIES).default("ambos"),
-  animalTag: optTag,
-  lotId: optInt,
-  receipt: photoSchema,
-});
+export const EXPENSE_STATUS = ["pago", "a_pagar"] as const;
+
+export const expenseCreateSchema = z
+  .object({
+    clientRef,
+    date: isoDate,
+    amountCents: cents,
+    categoryId: z.coerce.number().int().positive("Escolha a categoria"),
+    description: optText(300),
+    /** 'pago' entra no acerto entre as partes; 'a_pagar' é uma conta pendente (vencimento). */
+    status: z.enum(EXPENSE_STATUS).default("pago"),
+    dueDate: optDate,
+    paidByUserId: optInt,
+    species: z.enum(FINANCE_SPECIES).default("ambos"),
+    animalTag: optTag,
+    lotId: optInt,
+    receipt: photoSchema,
+  })
+  .superRefine((v, ctx) => {
+    if (v.status === "pago" && !v.paidByUserId)
+      ctx.addIssue({ code: "custom", path: ["paidByUserId"], message: "Informe quem pagou" });
+    if (v.status === "a_pagar" && !v.dueDate)
+      ctx.addIssue({ code: "custom", path: ["dueDate"], message: "Informe o vencimento da conta" });
+  });
 export type ExpenseCreate = z.infer<typeof expenseCreateSchema>;
-export const expenseUpdateSchema = expenseCreateSchema.omit({ clientRef: true }).partial().extend({
-  removeReceipt: z.boolean().optional(),
+export const expenseUpdateSchema = z
+  .object({
+    date: isoDate.optional(),
+    amountCents: cents.optional(),
+    categoryId: z.coerce.number().int().positive().optional(),
+    description: optText(300),
+    status: z.enum(EXPENSE_STATUS).optional(),
+    dueDate: optDate,
+    paidByUserId: optInt,
+    species: z.enum(FINANCE_SPECIES).optional(),
+    animalTag: optTag,
+    lotId: optInt,
+    receipt: photoSchema,
+    removeReceipt: z.boolean().optional(),
+  });
+
+/** Marcar uma conta a pagar como paga: quem pagou e quando. */
+export const payExpenseSchema = z.object({
+  paidByUserId: z.coerce.number().int().positive("Informe quem pagou"),
+  date: isoDate,
 });
 
 export const revenueCreateSchema = z.object({

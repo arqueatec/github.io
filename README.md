@@ -35,6 +35,7 @@ Cada animal tem uma **espécie** (ovino ou bovino) com categorias próprias, e o
 | **Alertas** | Próximas doses (e vencidas), partos previstos e animais em carência, na tela inicial. |
 | **Baixas** | Morte (causa obrigatória), abate, consumo próprio e **venda** de um ou vários animais (por kg ou por cabeça, comprador, peso), gerando a receita automaticamente. Baixa pode ser desfeita (auditada). |
 | **Despesas e receitas** | Data, valor, categoria, quem pagou/recebeu (a parte é derivada do usuário), comprovante em foto, animal/lote opcional. Prévia do efeito no saldo antes de salvar. |
+| **Contas a pagar** | A despesa pode ser lançada como **"a pagar"** (com vencimento), sem pagador. Ela aparece em Finanças → Contas a pagar (com totais, vencidas e a vencer) e **não entra no acerto entre as partes** até ser paga. Ao marcar como paga, você informa quem pagou e quando, a parte é derivada e a despesa passa a contar no saldo. Alertas de vencimento na tela inicial. |
 | **Acerto de contas** | Saldo único corrente entre as partes, compensação automática, reembolsos (data, valor, forma de pagamento), extrato lançamento a lançamento com a fração de cada parte, o efeito e o saldo acumulado. |
 | **Fechamento de período** | Ao registrar um acerto, os lançamentos até a data ficam travados para todos; só o administrador reabre (com motivo, auditado). |
 | **Indicadores** | Filtros por período, parte e lote; fórmula de cada indicador exibida na tela (ver abaixo). |

@@ -6,6 +6,7 @@ import { assertDecision, canCreateFinancial, canModifyFinancial, type Actor } fr
 import {
   expenseCreateSchema,
   expenseUpdateSchema,
+  payExpenseSchema,
   reimbursementCreateSchema,
   reimbursementUpdateSchema,
   revenueCreateSchema,
@@ -57,16 +58,20 @@ export async function createExpense(db: DB, actor: Actor, raw: unknown): Promise
         if (dup) return { id: dup.id, duplicate: true };
       }
       assertDecision(canCreateFinancial(actor, input.date, await getLockedUntil(tx)));
-      const payer = await requireActiveUser(tx, input.paidByUserId, "Pagador");
       await requireCategory(tx, input.categoryId, "despesa");
+      const payable = input.status === "a_pagar";
+      // Conta a pagar: pagador/parte só são definidos quando ela for paga.
+      const payer = payable ? null : await requireActiveUser(tx, input.paidByUserId!, "Pagador");
       const values = {
         clientRef: input.clientRef ?? null,
         date: input.date,
         amountCents: input.amountCents,
         categoryId: input.categoryId,
         description: input.description ?? null,
-        paidByUserId: payer.id,
-        party: payer.party,
+        status: input.status,
+        dueDate: payable ? input.dueDate ?? null : null,
+        paidByUserId: payer?.id ?? null,
+        party: payer?.party ?? null,
         species: input.species ?? "ambos",
         animalId: await resolveAnimalTag(tx, input.animalTag),
         lotId: await requireLot(tx, input.lotId),
@@ -97,10 +102,22 @@ export async function updateExpense(db: DB, actor: Actor, id: number, raw: unkno
     if (input.amountCents) patch.amountCents = input.amountCents;
     if (input.categoryId) patch.categoryId = (await requireCategory(tx, input.categoryId, "despesa")).id;
     if (input.description !== undefined) patch.description = input.description;
+    const finalStatus = input.status ?? before.status;
+    if (input.status) patch.status = input.status;
+    if (input.dueDate !== undefined) patch.dueDate = input.dueDate;
     if (input.paidByUserId) {
       const payer = await requireActiveUser(tx, input.paidByUserId, "Pagador");
       patch.paidByUserId = payer.id;
       patch.party = payer.party;
+    }
+    if (finalStatus === "a_pagar") {
+      // conta a pagar não tem pagador nem parte até ser paga
+      patch.paidByUserId = null;
+      patch.party = null;
+      if ((input.dueDate ?? before.dueDate) == null) throw new AppError("Informe o vencimento da conta a pagar");
+    } else if (finalStatus === "pago") {
+      patch.dueDate = null;
+      if (!(patch.paidByUserId ?? before.paidByUserId)) throw new AppError("Informe quem pagou");
     }
     if (input.species) patch.species = input.species;
     if (input.animalTag !== undefined) patch.animalId = await resolveAnimalTag(tx, input.animalTag);
@@ -120,6 +137,30 @@ export async function deleteExpense(db: DB, actor: Actor, id: number) {
     assertDecision(canModifyFinancial(actor, before, await getLockedUntil(tx)));
     const [after] = await tx.update(expenses).set({ deletedAt: new Date() }).where(eq(expenses.id, id)).returning();
     await audit(tx, actor.id, "expense", id, "delete", before, after);
+  });
+}
+
+/**
+ * Marca uma conta a pagar como paga: registra quem pagou e quando, derivando a parte.
+ * A partir daí a despesa passa a contar no acerto entre as partes.
+ * Qualquer sócio pode pagar (não é um lançamento "de outro" — a conta é comum).
+ */
+export async function payExpense(db: DB, actor: Actor, id: number, raw: unknown) {
+  const input = payExpenseSchema.parse(raw);
+  return db.transaction(async (tx) => {
+    const [before] = await tx.select().from(expenses).where(eq(expenses.id, id)).for("update");
+    if (!before) throw new NotFoundError("Conta não encontrada");
+    if (before.deletedAt) throw new AppError("Conta já excluída");
+    if (before.status === "pago") throw new AppError("Esta conta já está paga");
+    assertDecision(canCreateFinancial(actor, input.date, await getLockedUntil(tx)));
+    const payer = await requireActiveUser(tx, input.paidByUserId, "Pagador");
+    const [after] = await tx
+      .update(expenses)
+      .set({ status: "pago", dueDate: null, date: input.date, paidByUserId: payer.id, party: payer.party, updatedAt: new Date() })
+      .where(eq(expenses.id, id))
+      .returning();
+    await audit(tx, actor.id, "expense", id, "update", before, after);
+    return after;
   });
 }
 
@@ -314,6 +355,8 @@ export interface FinanceFilter {
   species?: "ovino" | "bovino" | null;
   /** Filtro exato de espécie (ovino, bovino ou ambos), sem incluir "ambos" junto. */
   speciesExact?: "ovino" | "bovino" | "ambos" | null;
+  /** Situação da despesa: 'pago' (realizada) ou 'a_pagar' (pendente). */
+  status?: "pago" | "a_pagar" | null;
 }
 
 function dateConds(col: typeof expenses.date | typeof revenues.date | typeof reimbursements.date, f: FinanceFilter) {
@@ -329,6 +372,7 @@ export async function listExpenses(db: Exec, f: FinanceFilter = {}) {
   if (f.categoryId) conds.push(eq(expenses.categoryId, f.categoryId));
   if (f.species) conds.push(sql`(${expenses.species} = ${f.species} or ${expenses.species} = 'ambos')`);
   if (f.speciesExact) conds.push(eq(expenses.species, f.speciesExact));
+  if (f.status) conds.push(eq(expenses.status, f.status));
   if (f.lotId) conds.push(sql`(${expenses.lotId} = ${f.lotId} or ${animals.lotId} = ${f.lotId})`);
   return db
     .select({
@@ -338,6 +382,8 @@ export async function listExpenses(db: Exec, f: FinanceFilter = {}) {
       categoryId: expenses.categoryId,
       categoryName: categories.name,
       description: expenses.description,
+      status: expenses.status,
+      dueDate: expenses.dueDate,
       paidByUserId: expenses.paidByUserId,
       paidByName: users.name,
       party: expenses.party,
@@ -352,11 +398,42 @@ export async function listExpenses(db: Exec, f: FinanceFilter = {}) {
     })
     .from(expenses)
     .innerJoin(categories, eq(categories.id, expenses.categoryId))
-    .innerJoin(users, eq(users.id, expenses.paidByUserId))
+    .leftJoin(users, eq(users.id, expenses.paidByUserId))
     .leftJoin(animals, eq(animals.id, expenses.animalId))
     .leftJoin(lots, eq(lots.id, expenses.lotId))
     .where(and(...conds))
     .orderBy(desc(expenses.date), desc(expenses.id));
+}
+
+/** Contas a pagar (status 'a_pagar', não excluídas), ordenadas por vencimento. */
+export async function listPayables(db: Exec, f: FinanceFilter = {}) {
+  const conds: SQL[] = [isNull(expenses.deletedAt), eq(expenses.status, "a_pagar")];
+  if (f.start) conds.push(gte(expenses.dueDate, f.start));
+  if (f.end) conds.push(lte(expenses.dueDate, f.end));
+  if (f.species) conds.push(sql`(${expenses.species} = ${f.species} or ${expenses.species} = 'ambos')`);
+  if (f.categoryId) conds.push(eq(expenses.categoryId, f.categoryId));
+  return db
+    .select({
+      id: expenses.id,
+      date: expenses.date,
+      dueDate: expenses.dueDate,
+      amountCents: expenses.amountCents,
+      categoryId: expenses.categoryId,
+      categoryName: categories.name,
+      description: expenses.description,
+      species: expenses.species,
+      animalTag: animals.tag,
+      lotName: lots.name,
+      receiptId: expenses.receiptId,
+      createdBy: expenses.createdBy,
+      createdAt: expenses.createdAt,
+    })
+    .from(expenses)
+    .innerJoin(categories, eq(categories.id, expenses.categoryId))
+    .leftJoin(animals, eq(animals.id, expenses.animalId))
+    .leftJoin(lots, eq(lots.id, expenses.lotId))
+    .where(and(...conds))
+    .orderBy(asc(expenses.dueDate), asc(expenses.id));
 }
 
 export async function listRevenues(db: Exec, f: FinanceFilter = {}) {
@@ -417,14 +494,15 @@ export async function listReimbursements(db: Exec, f: FinanceFilter = {}) {
 /** Todos os lançamentos (não excluídos) no formato do domínio do extrato. */
 export async function ledgerInputs(db: Exec, until?: string | null): Promise<LedgerInput[]> {
   const f = { end: until ?? null };
-  const [ex, rv, rb] = await Promise.all([listExpenses(db, f), listRevenues(db, f), listReimbursements(db, f)]);
+  // Contas a pagar (status 'a_pagar') NÃO entram no acerto até serem pagas.
+  const [ex, rv, rb] = await Promise.all([listExpenses(db, { ...f, status: "pago" }), listRevenues(db, f), listReimbursements(db, f)]);
   return [
     ...ex.map((e) => ({
       kind: "despesa" as const,
       id: e.id,
       date: e.date,
       amountCents: e.amountCents,
-      party: e.party,
+      party: e.party as Party,
       description: e.description,
       userName: e.paidByName,
       categoryName: e.categoryName,

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getDb } from "@/db";
 import { pageUser } from "@/server/page";
 import { getAlerts } from "@/server/services/health";
-import { computeBalance } from "@/server/services/finance";
+import { computeBalance, listPayables } from "@/server/services/finance";
 import { inventoryProgress } from "@/server/services/inventory";
 import { loadHerd } from "@/server/services/dashboard";
 import { herdByCategory } from "@/domain/indices";
@@ -18,8 +18,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
   const { erro } = await searchParams;
   const db = getDb();
   const today = todayIso();
-  const [alerts, balance, inv, herd] = await Promise.all([getAlerts(db, today, 45), computeBalance(db), inventoryProgress(db), loadHerd(db)]);
+  const [alerts, balance, inv, herd, payables] = await Promise.all([getAlerts(db, today, 45), computeBalance(db), inventoryProgress(db), loadHerd(db), listPayables(db)]);
   const b = describeBalance(balance);
+  const duePayables = payables.filter((r) => r.dueDate && diffDays(today, r.dueDate) <= 15);
+  const overduePayables = payables.filter((r) => r.dueDate && r.dueDate < today);
   const counts = herdByCategory(herd.animals, today);
   const ov = herdByCategory(herd.animals.filter((a) => a.species === "ovino"), today);
   const bo = herdByCategory(herd.animals.filter((a) => a.species === "bovino"), today);
@@ -79,6 +81,32 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ e
           </Link>
         ))}
       </div>
+
+      {duePayables.length > 0 && (
+        <Card
+          title={`Contas a pagar vencendo (${duePayables.length})`}
+          actions={<Link className="link text-sm" href="/financeiro/contas-a-pagar">Ver todas</Link>}
+        >
+          <ul className="divide-y divide-[var(--border)]">
+            {duePayables.slice(0, 8).map((r) => {
+              const dd = diffDays(today, r.dueDate!);
+              return (
+                <li key={r.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                  <Link className="link" href="/financeiro/contas-a-pagar">
+                    {r.categoryName}
+                    {r.description ? ` — ${r.description}` : ""}
+                  </Link>
+                  <span className="flex items-center gap-2 whitespace-nowrap">
+                    {formatCents(r.amountCents)}{" "}
+                    <Badge tone={dd < 0 ? "bad" : dd <= 7 ? "warn" : "info"}>{dd < 0 ? `${-dd} d vencida` : dd === 0 ? "vence hoje" : `em ${dd} d`}</Badge>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          {overduePayables.length > 0 && <p className="mt-2 text-xs text-[var(--bad)]">{overduePayables.length} conta(s) já vencida(s).</p>}
+        </Card>
+      )}
 
       <Card title={`Partos previstos (${alerts.births.length})`} actions={<Link className="link text-sm" href="/reproducao">Reprodução</Link>}>
         {alerts.births.length ? (

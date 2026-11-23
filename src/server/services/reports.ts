@@ -87,7 +87,7 @@ export async function buildReport(db: Exec, kind: string, f: ReportFilter): Prom
       };
     }
     case "despesas": {
-      const rows = await listExpenses(db, range);
+      const rows = await listExpenses(db, { ...range, status: "pago" });
       return {
         title: "Despesas",
         columns: [
