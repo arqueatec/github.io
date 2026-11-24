@@ -67,6 +67,8 @@ export const exitTypeEnum = pgEnum("exit_type", ["venda", "morte", "abate", "con
 export const healthTypeEnum = pgEnum("health_type", ["vacina", "vermifugacao", "tratamento", "outro"]);
 export const pregnancyResultEnum = pgEnum("pregnancy_result", ["prenhe", "vazia", "duvidosa"]);
 export const categoryKindEnum = pgEnum("category_kind", ["despesa", "receita"]);
+/** Situação de uma despesa: já paga ou conta a pagar (vencimento futuro). */
+export const expenseStatusEnum = pgEnum("expense_status", ["pago", "a_pagar"]);
 
 // ---------------------------------------------------------------- Usuários / sessão
 
@@ -381,11 +383,14 @@ export const expenses = pgTable(
       .notNull()
       .references(() => categories.id),
     description: text("description"),
-    paidByUserId: integer("paid_by_user_id")
-      .notNull()
-      .references(() => users.id),
-    /** Parte derivada do usuário pagante no momento do lançamento (snapshot). */
-    party: partyEnum("party").notNull(),
+    /** Situação: 'pago' (afeta o saldo entre as partes) ou 'a_pagar' (conta pendente). */
+    status: expenseStatusEnum("status").notNull().default("pago"),
+    /** Vencimento da conta a pagar. */
+    dueDate: date("due_date"),
+    /** Pagador: nulo enquanto a conta está "a pagar"; definido ao marcar como paga. */
+    paidByUserId: integer("paid_by_user_id").references(() => users.id),
+    /** Parte derivada do usuário pagante (snapshot). Nula enquanto "a pagar". */
+    party: partyEnum("party"),
     /** Espécie a que a despesa se refere: ovino, bovino ou "ambos" (geral). */
     species: financeSpeciesEnum("species").notNull().default("ambos"),
     animalId: integer("animal_id").references(() => animals.id, { onDelete: "set null" }),

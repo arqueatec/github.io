@@ -15,13 +15,13 @@ export default async function EditarDespesa({ params }: { params: Promise<{ id: 
   const can = canModifyFinancial(user, e, ctx.lockedUntil);
   return (
     <div className="mx-auto max-w-xl">
-      <PageHeader title="Editar despesa" back="/financeiro/despesas" />
+      <PageHeader title={e.status === "a_pagar" ? "Editar conta a pagar" : "Editar despesa"} back={e.status === "a_pagar" ? "/financeiro/contas-a-pagar" : "/financeiro/despesas"} />
       {can.ok ? (
         <EntryForm
           kind="despesa"
           currentUserId={user.id}
           {...ctx}
-          initial={{ id: e.id, date: e.date, amountCents: e.amountCents, categoryId: e.categoryId, description: e.description, userId: e.paidByUserId, species: e.species, animalTag: e.animalTag, lotId: e.lotId, receiptId: e.receiptId }}
+          initial={{ id: e.id, date: e.date, amountCents: e.amountCents, categoryId: e.categoryId, description: e.description, userId: e.paidByUserId, status: e.status, dueDate: e.dueDate, species: e.species, animalTag: e.animalTag, lotId: e.lotId, receiptId: e.receiptId }}
         />
       ) : (
         <p className="card text-sm">{can.reason}</p>

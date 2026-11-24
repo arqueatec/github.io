@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getDb } from "@/db";
 import { pageUser, sp } from "@/server/page";
-import { computeBalance, financeSummary, getShares, listExpenses } from "@/server/services/finance";
+import { computeBalance, financeSummary, getShares, listExpenses, listPayables } from "@/server/services/finance";
 import { getLockedUntil } from "@/server/services/locks";
 import { describeBalance, shareAt, shareLabel } from "@/domain/ledger";
 import { formatDateBR, todayIso } from "@/domain/dates";
@@ -17,8 +17,17 @@ export default async function FinanceiroPage({ searchParams }: { searchParams: P
   const today = todayIso();
   const f = { start: sp(p, "start") ?? `${today.slice(0, 4)}-01-01`, end: sp(p, "end") ?? today };
   const db = getDb();
-  const [balance, t, shares, lockedUntil, exp] = await Promise.all([computeBalance(db), financeSummary(db, f), getShares(db), getLockedUntil(db), listExpenses(db, f)]);
+  const [balance, t, shares, lockedUntil, exp, payables] = await Promise.all([
+    computeBalance(db),
+    financeSummary(db, f),
+    getShares(db),
+    getLockedUntil(db),
+    listExpenses(db, { ...f, status: "pago" }),
+    listPayables(db),
+  ]);
   const d = describeBalance(balance);
+  const payTotal = payables.reduce((s, r) => s + r.amountCents, 0);
+  const overdue = payables.filter((r) => r.dueDate && r.dueDate < today);
   const s = shareLabel(shareAt(shares, today));
   const byCat = new Map<string, number>();
   for (const e of exp) byCat.set(e.categoryName, (byCat.get(e.categoryName) ?? 0) + e.amountCents);
@@ -46,8 +55,21 @@ export default async function FinanceiroPage({ searchParams }: { searchParams: P
           {lockedUntil && ` · fechado até ${formatDateBR(lockedUntil)}`}
         </div>
       </Link>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {payables.length > 0 && (
+        <Link href="/financeiro/contas-a-pagar" className="card block">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-xs uppercase text-[var(--muted)]">Contas a pagar</div>
+              <div className="mt-1 text-xl font-bold">{formatCents(payTotal)}</div>
+              <div className="text-xs text-[var(--muted)]">{payables.length} conta(s){overdue.length ? ` · ${overdue.length} vencida(s)` : ""}</div>
+            </div>
+            {overdue.length > 0 && <span className="badge badge-bad">⚠️ {overdue.length} vencida(s)</span>}
+          </div>
+        </Link>
+      )}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <Link href="/financeiro/despesas" className="tile">🧾 Despesas</Link>
+        <Link href="/financeiro/contas-a-pagar" className="tile">🧾 A pagar</Link>
         <Link href="/financeiro/receitas" className="tile">💵 Receitas</Link>
         <Link href="/financeiro/reembolsos" className="tile">🔁 Reembolsos</Link>
         <Link href="/financeiro/fechamentos" className="tile">🔒 Fechamentos</Link>

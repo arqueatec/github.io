@@ -15,6 +15,8 @@ import {
   createRevenue,
   deleteExpense,
   getLedger,
+  listPayables,
+  payExpense,
   updateExpense,
 } from "@/server/services/finance";
 import { closePeriod, getLockedUntil, reopenPeriod } from "@/server/services/locks";
@@ -164,5 +166,41 @@ d("finanças (integração)", () => {
     await updateUser(db, U.A, U.B2.id, { active: false });
     await expect(createExpense(db, { ...U.B2, active: false }, exp(U.B2, 100, "2025-08-01"))).rejects.toBeInstanceOf(AccessError);
     await expect(createExpense(db, U.B1, exp(U.B1, 100, "2025-08-01", U.B2.id))).rejects.toThrow(/Pagador inválido/);
+  });
+
+  it("conta a pagar só entra no acerto quando é paga", async () => {
+    const balBefore = await computeBalance(db);
+    // registra uma conta a pagar (sem pagador, com vencimento) — não afeta o saldo
+    const r = await createExpense(db, U.B1, {
+      date: "2026-01-05",
+      amountCents: 30000,
+      categoryId: catDesp,
+      status: "a_pagar",
+      dueDate: "2026-02-10",
+      description: "ração a prazo",
+    });
+    const [row] = await db.select().from(expenses).where(eq(expenses.id, r.id));
+    expect(row.status).toBe("a_pagar");
+    expect(row.paidByUserId).toBeNull();
+    expect(row.party).toBeNull();
+    expect(row.dueDate).toBe("2026-02-10");
+    expect(await computeBalance(db)).toBe(balBefore); // não mexeu no saldo
+
+    const payables = await listPayables(db);
+    expect(payables.some((p) => p.id === r.id)).toBe(true);
+
+    // exige vencimento
+    await expect(createExpense(db, U.B1, { date: "2026-01-05", amountCents: 100, categoryId: catDesp, status: "a_pagar" })).rejects.toThrow(/vencimento/);
+
+    // paga: Parte A paga R$ 300 → B passa a dever a fração de B (participação vigente em 2026: 1/2 = R$ 150)
+    await payExpense(db, U.A, r.id, { paidByUserId: U.A.id, date: "2026-02-08" });
+    const [paid] = await db.select().from(expenses).where(eq(expenses.id, r.id));
+    expect(paid.status).toBe("pago");
+    expect(paid.party).toBe("A");
+    expect(paid.date).toBe("2026-02-08");
+    expect(await computeBalance(db)).toBe(balBefore + 15000);
+    expect((await listPayables(db)).some((p) => p.id === r.id)).toBe(false);
+    // pagar de novo é bloqueado
+    await expect(payExpense(db, U.A, r.id, { paidByUserId: U.A.id, date: "2026-02-08" })).rejects.toThrow(/já está paga/);
   });
 });

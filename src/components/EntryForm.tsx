@@ -13,8 +13,10 @@ export interface EntryInitial {
   amountCents: number;
   categoryId: number;
   description: string | null;
-  userId: number;
+  userId: number | null;
   species: FinSpecies;
+  status?: "pago" | "a_pagar";
+  dueDate?: string | null;
   animalTag?: string | null;
   lotId: number | null;
   receiptId: number | null;
@@ -45,6 +47,8 @@ export function EntryForm({
   const [categoryId, setCategoryId] = useState(initial ? String(initial.categoryId) : "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [userId, setUserId] = useState(String(initial?.userId ?? currentUserId));
+  const [status, setStatus] = useState<"pago" | "a_pagar">(initial?.status ?? "pago");
+  const [dueDate, setDueDate] = useState(initial?.dueDate ?? "");
   const [species, setSpecies] = useState<FinSpecies>(initial?.species ?? "ambos");
   const [animalTag, setAnimalTag] = useState(initial?.animalTag ?? "");
   const [lotId, setLotId] = useState(initial?.lotId ? String(initial.lotId) : "");
@@ -70,6 +74,7 @@ export function EntryForm({
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
+        const payable = isExp && status === "a_pagar";
         const body: Record<string, unknown> = {
           date,
           amountCents: amount,
@@ -78,27 +83,46 @@ export function EntryForm({
           species,
           lotId: lotId ? Number(lotId) : null,
           receipt,
-          [isExp ? "paidByUserId" : "receivedByUserId"]: Number(userId),
         };
-        if (isExp) body.animalTag = animalTag || null;
+        if (isExp) {
+          body.status = status;
+          body.animalTag = animalTag || null;
+          body.paidByUserId = payable ? null : Number(userId);
+          body.dueDate = payable ? dueDate : null;
+        } else {
+          body.receivedByUserId = Number(userId);
+        }
+        const noun = isExp ? (payable ? "Conta a pagar" : "Despesa") : "Receita";
         if (initial) {
           body.removeReceipt = removeReceipt;
-          void submit("PATCH", `${base}/${initial.id}`, body, { success: "Lançamento atualizado", redirect: list });
+          void submit("PATCH", `${base}/${initial.id}`, body, { success: "Lançamento atualizado", redirect: payable ? "/financeiro/contas-a-pagar" : list });
         } else {
           void submit("POST", base, body, {
-            offline: `${isExp ? "Despesa" : "Receita"} ${amount ? formatCents(amount) : ""}`,
-            success: `${isExp ? "Despesa" : "Receita"} lançada`,
-            redirect: list,
+            offline: `${noun} ${amount ? formatCents(amount) : ""}`,
+            success: `${noun} ${payable ? "registrada" : "lançada"}`,
+            redirect: payable ? "/financeiro/contas-a-pagar" : list,
           });
         }
       }}
     >
       <div className="card space-y-4">
+        {isExp && (
+          <Field label="Situação">
+            <Segmented
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: "pago", label: "✅ Paga agora" },
+                { value: "a_pagar", label: "🧾 A pagar (conta)" },
+              ]}
+            />
+          </Field>
+        )}
         <Field label="Valor *">
           <MoneyInput cents={amount} onChange={setAmount} required autoFocus={!initial} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Data" error={locked ? `Período fechado até ${lockedUntil}` : null}>
+          <Field label={isExp && status === "a_pagar" ? "Data do lançamento" : "Data"} error={locked ? `Período fechado até ${lockedUntil}` : null}>
             <input type="date" className="input" value={date} max={todayLocal()} onChange={(e) => setDate(e.target.value)} required />
           </Field>
           <Field label="Categoria *">
@@ -112,15 +136,21 @@ export function EntryForm({
             </select>
           </Field>
         </div>
-        <Field label={isExp ? "Quem pagou" : "Quem recebeu"} hint={who ? `Parte ${who.party} (derivada do usuário)` : undefined}>
-          <select className="select" value={userId} onChange={(e) => setUserId(e.target.value)}>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} — Parte {u.party}
-              </option>
-            ))}
-          </select>
-        </Field>
+        {isExp && status === "a_pagar" ? (
+          <Field label="Vencimento *" hint="Quando esta conta precisa ser paga. O pagador é definido ao marcar como paga.">
+            <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
+          </Field>
+        ) : (
+          <Field label={isExp ? "Quem pagou" : "Quem recebeu"} hint={who ? `Parte ${who.party} (derivada do usuário)` : undefined}>
+            <select className="select" value={userId} onChange={(e) => setUserId(e.target.value)}>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} — Parte {u.party}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <Field label="A que se refere" hint="Use Geral quando valer para os dois (ex.: sal mineral, mão de obra).">
           <Segmented
             value={species}
@@ -163,14 +193,20 @@ export function EntryForm({
             </label>
           </div>
         )}
-        {preview && (
-          <p className="rounded-lg bg-[var(--info-bg)] p-3 text-sm text-[var(--info)]">
-            Rateio {share.num}/{share.den} – {share.den - share.num}/{share.den}: {preview}.
+        {isExp && status === "a_pagar" ? (
+          <p className="rounded-lg bg-[var(--warn-bg)] p-3 text-sm text-[var(--warn)]">
+            Conta a pagar: não entra no acerto entre as partes enquanto não for paga. Você a encontra em Finanças → Contas a pagar.
           </p>
+        ) : (
+          preview && (
+            <p className="rounded-lg bg-[var(--info-bg)] p-3 text-sm text-[var(--info)]">
+              Rateio {share.num}/{share.den} – {share.den - share.num}/{share.den}: {preview}.
+            </p>
+          )
         )}
       </div>
       <FormError error={error} />
-      <SubmitBar busy={busy || !!locked} label={initial ? "Salvar alterações" : "Lançar"}>
+      <SubmitBar busy={busy || !!locked} label={initial ? "Salvar alterações" : isExp && status === "a_pagar" ? "Registrar conta" : "Lançar"}>
         {initial && <DeleteButton url={`${base}/${initial.id}`} redirect={list} confirmText="Excluir este lançamento? Fica registrado na auditoria." />}
       </SubmitBar>
     </form>

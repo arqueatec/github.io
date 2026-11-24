@@ -165,7 +165,7 @@ export async function dashboard(db: Exec, f: DashboardFilter) {
   const [shares, inputs, expList, revList] = await Promise.all([
     getShares(db),
     ledgerInputs(db),
-    listExpenses(db, { start: p.start, end: p.end, lotId: f.lotId, party: f.party ?? null, species }),
+    listExpenses(db, { start: p.start, end: p.end, lotId: f.lotId, party: f.party ?? null, species, status: "pago" }),
     listRevenues(db, { start: p.start, end: p.end, lotId: f.lotId, party: f.party ?? null, species }),
   ]);
   const expTotal = expList.reduce((s, e) => s + e.amountCents, 0);
@@ -179,7 +179,7 @@ export async function dashboard(db: Exec, f: DashboardFilter) {
   // pois o rateio depende de ambas; o filtro de lote se aplica, o de parte não.
   const [expAll, revAll] = f.party
     ? await Promise.all([
-        listExpenses(db, { start: p.start, end: p.end, lotId: f.lotId, species }),
+        listExpenses(db, { start: p.start, end: p.end, lotId: f.lotId, species, status: "pago" }),
         listRevenues(db, { start: p.start, end: p.end, lotId: f.lotId, species }),
       ])
     : [expList, revList];
@@ -241,7 +241,7 @@ export async function eweDetail(db: Exec, eweId: number, refDate = todayIso()) {
       .map((l) => ({ id: l.id, tag: l.tag, sex: l.sex, status: l.status, weaning: weanMap.get(l.id) ?? null, exit: exitMap.get(l.id) ?? null })),
   }));
   // custos: despesas vinculadas diretamente + rateio estimado das despesas gerais pelo custo por dia-animal
-  const allExp = await listExpenses(db, {});
+  const allExp = await listExpenses(db, { status: "pago" });
   const direct = allExp.filter((e) => e.animalId === eweId);
   const directTotal = direct.reduce((s, e) => s + e.amountCents, 0);
   const general = allExp.filter((e) => !e.animalId);
