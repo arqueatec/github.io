@@ -331,11 +331,11 @@ export function FormError({ error }: { error: string | null }) {
   );
 }
 
-export function SubmitBar({ busy, label = "Salvar", children }: { busy: boolean; label?: string; children?: ReactNode }) {
+export function SubmitBar({ busy, disabled, label = "Salvar", children }: { busy: boolean; disabled?: boolean; label?: string; children?: ReactNode }) {
   return (
     <div className="submit-bar">
       {children}
-      <button type="submit" className="btn btn-primary btn-lg flex-1" disabled={busy}>
+      <button type="submit" className="btn btn-primary btn-lg flex-1" disabled={busy || disabled}>
         {busy ? "Salvando…" : label}
       </button>
     </div>

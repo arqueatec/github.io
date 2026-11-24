@@ -195,9 +195,9 @@ export function EntryForm({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="field-label">Parcelas a pagar</span>
-                    {saldo != null && (
-                      <span className={`text-xs ${restante === 0 ? "text-[var(--good)]" : "text-[var(--muted)]"}`}>
-                        {restante === 0 ? "✓ parcelas fecham o saldo" : `Falta distribuir ${formatCents(Math.max(0, restante ?? 0))}`}
+                    {saldo != null && restante != null && (
+                      <span className={`text-xs font-medium ${restante === 0 ? "text-[var(--good)]" : "text-[var(--bad)]"}`}>
+                        {restante === 0 ? "✓ parcelas fecham o saldo" : restante > 0 ? `Falta distribuir ${formatCents(restante)}` : `Passou ${formatCents(-restante)} do saldo`}
                       </span>
                     )}
                   </div>
@@ -292,8 +292,19 @@ export function EntryForm({
           )
         )}
       </div>
+      {parcelando && parcelasInvalid && (
+        <p className="text-sm text-[var(--bad)]">
+          {amount == null
+            ? "Informe o valor total."
+            : entrada >= amount
+              ? "A entrada deve ser menor que o total."
+              : restante !== 0
+                ? `Ajuste as parcelas: ${restante! > 0 ? `faltam ${formatCents(restante!)}` : `passou ${formatCents(-restante!)}`} para fechar o saldo (total − entrada).`
+                : "Preencha valor e vencimento de todas as parcelas."}
+        </p>
+      )}
       <FormError error={error} />
-      <SubmitBar busy={busy || !!locked || parcelasInvalid} label={initial ? "Salvar alterações" : parcelando ? "Lançar compra parcelada" : isExp && status === "a_pagar" ? "Registrar conta" : "Lançar"}>
+      <SubmitBar busy={busy} disabled={!!locked || parcelasInvalid} label={initial ? "Salvar alterações" : parcelando ? "Lançar compra parcelada" : isExp && status === "a_pagar" ? "Registrar conta" : "Lançar"}>
         {initial && <DeleteButton url={`${base}/${initial.id}`} redirect={list} confirmText="Excluir este lançamento? Fica registrado na auditoria." />}
       </SubmitBar>
     </form>
