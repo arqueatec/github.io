@@ -264,16 +264,30 @@ export const expenseCreateSchema = z
     dueDate: optDate,
     paidByUserId: optInt,
     /**
-     * Pagamento parcial: valor já pago agora (status 'pago'). Quando informado e menor que o
-     * total, o saldo (total − pago) vira uma conta a pagar com o vencimento em `dueDate`.
+     * Pagamento parcial / entrada: valor já pago agora (status 'pago'). Sozinho (com `dueDate`)
+     * gera 1 saldo a pagar; com `installments`, é a entrada de uma compra parcelada.
      */
     paidNowCents: optCents,
+    /** Compra parcelada: parcelas do saldo (cada uma vira uma conta a pagar). */
+    installments: z.array(z.object({ amountCents: cents, dueDate: isoDate })).max(60).optional(),
     species: z.enum(FINANCE_SPECIES).default("ambos"),
     animalTag: optTag,
     lotId: optInt,
     receipt: photoSchema,
   })
   .superRefine((v, ctx) => {
+    const hasInst = (v.installments?.length ?? 0) > 0;
+    if (hasInst) {
+      const paid = v.paidNowCents ?? 0;
+      if (paid >= v.amountCents)
+        ctx.addIssue({ code: "custom", path: ["paidNowCents"], message: "A entrada deve ser menor que o total" });
+      if (paid > 0 && !v.paidByUserId)
+        ctx.addIssue({ code: "custom", path: ["paidByUserId"], message: "Informe quem pagou a entrada" });
+      const sum = v.installments!.reduce((s, p) => s + p.amountCents, 0);
+      if (sum !== v.amountCents - paid)
+        ctx.addIssue({ code: "custom", path: ["installments"], message: "A soma das parcelas deve ser igual ao saldo (total − entrada)" });
+      return;
+    }
     if (v.status === "pago" && !v.paidByUserId)
       ctx.addIssue({ code: "custom", path: ["paidByUserId"], message: "Informe quem pagou" });
     if (v.status === "a_pagar" && !v.dueDate)

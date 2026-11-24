@@ -60,14 +60,8 @@ export async function createExpense(db: DB, actor: Actor, raw: unknown): Promise
       }
       assertDecision(canCreateFinancial(actor, input.date, await getLockedUntil(tx)));
       await requireCategory(tx, input.categoryId, "despesa");
-      const payable = input.status === "a_pagar";
-      // Pagamento parcial: parte paga agora + saldo que vira conta a pagar (total − pago).
-      const splitting = !payable && input.paidNowCents != null && input.paidNowCents < input.amountCents;
-      // Conta a pagar: pagador/parte só são definidos quando ela for paga.
-      const payer = payable ? null : await requireActiveUser(tx, input.paidByUserId!, "Pagador");
       const animalId = await resolveAnimalTag(tx, input.animalTag);
       const lotId = await requireLot(tx, input.lotId);
-      const receiptId = await saveAttachment(tx, input.receipt, actor.id);
       const common = {
         categoryId: input.categoryId,
         description: input.description ?? null,
@@ -76,6 +70,61 @@ export async function createExpense(db: DB, actor: Actor, raw: unknown): Promise
         lotId,
         createdBy: actor.id,
       };
+
+      // Compra parcelada: entrada opcional (1 linha paga) + N parcelas (contas a pagar).
+      const installments = input.installments ?? [];
+      if (installments.length > 0) {
+        const paid = input.paidNowCents ?? 0;
+        let anchorId: number | null = null;
+        if (paid > 0) {
+          const payer = await requireActiveUser(tx, input.paidByUserId!, "Pagador");
+          const [entrada] = await tx
+            .insert(expenses)
+            .values({
+              ...common,
+              clientRef: input.clientRef ?? null,
+              date: input.date,
+              amountCents: paid,
+              status: "pago",
+              paidByUserId: payer.id,
+              party: payer.party,
+              receiptId: await saveAttachment(tx, input.receipt, actor.id),
+            })
+            .returning();
+          await audit(tx, actor.id, "expense", entrada.id, "create", null, entrada);
+          anchorId = entrada.id;
+        }
+        let firstId: number | null = null;
+        for (const [idx, p] of installments.entries()) {
+          // Sem entrada, a 1ª parcela carrega o clientRef/recibo (âncora de idempotência).
+          const anchorRow = anchorId == null && idx === 0;
+          const [parcela] = await tx
+            .insert(expenses)
+            .values({
+              ...common,
+              clientRef: anchorRow ? input.clientRef ?? null : null,
+              date: input.date,
+              amountCents: p.amountCents,
+              status: "a_pagar",
+              dueDate: p.dueDate,
+              paidByUserId: null,
+              party: null,
+              parentExpenseId: anchorId,
+              receiptId: anchorRow ? await saveAttachment(tx, input.receipt, actor.id) : null,
+            })
+            .returning();
+          await audit(tx, actor.id, "expense", parcela.id, "create", null, parcela);
+          if (idx === 0) firstId = parcela.id;
+        }
+        return { id: anchorId ?? firstId!, duplicate: false };
+      }
+
+      const payable = input.status === "a_pagar";
+      // Pagamento parcial (1 parcela): parte paga agora + saldo que vira conta a pagar.
+      const splitting = !payable && input.paidNowCents != null && input.paidNowCents < input.amountCents;
+      // Conta a pagar: pagador/parte só são definidos quando ela for paga.
+      const payer = payable ? null : await requireActiveUser(tx, input.paidByUserId!, "Pagador");
+      const receiptId = await saveAttachment(tx, input.receipt, actor.id);
       const [row] = await tx
         .insert(expenses)
         .values({

@@ -49,9 +49,10 @@ export function EntryForm({
   const [userId, setUserId] = useState(String(initial?.userId ?? currentUserId));
   const [status, setStatus] = useState<"pago" | "a_pagar">(initial?.status ?? "pago");
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? "");
-  // Pagamento parcial (só na criação de despesa paga): parte paga agora + saldo a pagar.
-  const [partial, setPartial] = useState(false);
+  // Compra parcelada (só na criação de despesa paga): entrada opcional + N parcelas.
+  const [parcelar, setParcelar] = useState(false);
   const [paidNow, setPaidNow] = useState<number | null>(null);
+  const [parcelas, setParcelas] = useState<{ amount: number | null; due: string }[]>([{ amount: null, due: "" }]);
   const [species, setSpecies] = useState<FinSpecies>(initial?.species ?? "ambos");
   const [animalTag, setAnimalTag] = useState(initial?.animalTag ?? "");
   const [lotId, setLotId] = useState(initial?.lotId ? String(initial.lotId) : "");
@@ -63,12 +64,22 @@ export function EntryForm({
   const list = isExp ? "/financeiro/despesas" : "/financeiro/receitas";
   const who = users.find((u) => String(u.id) === userId);
   const locked = lockedUntil && date <= lockedUntil;
-  // Pagamento parcial válido: criação de despesa paga, com valor pago informado e menor que o total.
-  const canPartial = isExp && !initial && status === "pago";
-  const splitting = canPartial && partial;
-  const remaining = splitting && amount != null && paidNow != null ? amount - paidNow : null;
-  // valor que de fato afeta o saldo entre as partes (no parcial, só a parcela paga agora)
-  const effectAmount = splitting ? paidNow : amount;
+  // Parcelamento válido: criação de despesa paga (entrada opcional + parcelas do saldo).
+  const canParcelar = isExp && !initial && status === "pago";
+  const parcelando = canParcelar && parcelar;
+  const entrada = paidNow ?? 0;
+  const saldo = parcelando && amount != null ? amount - entrada : null;
+  const somaParcelas = parcelas.reduce((s, p) => s + (p.amount ?? 0), 0);
+  const restante = saldo != null ? saldo - somaParcelas : null;
+  const parcelasInvalid = parcelando && (amount == null || entrada >= amount || restante !== 0 || parcelas.some((p) => !p.amount || !p.due));
+  const distribuirIgual = () => {
+    if (saldo == null || saldo <= 0) return;
+    const n = parcelas.length;
+    const base = Math.floor(saldo / n);
+    setParcelas((xs) => xs.map((x, i) => ({ ...x, amount: i === n - 1 ? saldo - base * (n - 1) : base })));
+  };
+  // valor que de fato afeta o saldo entre as partes (no parcelamento, só a entrada paga)
+  const effectAmount = parcelando ? (entrada > 0 ? entrada : null) : amount;
   // prévia do efeito no saldo
   let preview = "";
   if (effectAmount && who) {
@@ -94,24 +105,31 @@ export function EntryForm({
           receipt,
         };
         if (isExp) {
-          body.status = status;
           body.animalTag = animalTag || null;
-          body.paidByUserId = payable ? null : Number(userId);
-          body.dueDate = payable ? dueDate : splitting ? dueDate : null;
-          if (splitting) body.paidNowCents = paidNow;
+          if (parcelando) {
+            body.status = entrada > 0 ? "pago" : "a_pagar";
+            body.paidByUserId = entrada > 0 ? Number(userId) : null;
+            body.paidNowCents = entrada > 0 ? paidNow : null;
+            body.installments = parcelas.filter((p) => p.amount && p.due).map((p) => ({ amountCents: p.amount, dueDate: p.due }));
+            body.dueDate = null;
+          } else {
+            body.status = status;
+            body.paidByUserId = payable ? null : Number(userId);
+            body.dueDate = payable ? dueDate : null;
+          }
         } else {
           body.receivedByUserId = Number(userId);
         }
         const noun = isExp ? (payable ? "Conta a pagar" : "Despesa") : "Receita";
-        // Após um lançamento que gera conta pendente (a pagar ou parcial), leva à lista de contas.
-        const toPayables = payable || splitting;
+        // Após um lançamento que gera conta pendente (a pagar ou parcelas), leva à lista de contas.
+        const toPayables = payable || parcelando;
         if (initial) {
           body.removeReceipt = removeReceipt;
           void submit("PATCH", `${base}/${initial.id}`, body, { success: "Lançamento atualizado", redirect: payable ? "/financeiro/contas-a-pagar" : list });
         } else {
           void submit("POST", base, body, {
             offline: `${noun} ${amount ? formatCents(amount) : ""}`,
-            success: splitting ? "Despesa lançada — saldo em Contas a pagar" : `${noun} ${payable ? "registrada" : "lançada"}`,
+            success: parcelando ? "Compra parcelada lançada — parcelas em Contas a pagar" : `${noun} ${payable ? "registrada" : "lançada"}`,
             redirect: toPayables ? "/financeiro/contas-a-pagar" : list,
           });
         }
@@ -130,7 +148,7 @@ export function EntryForm({
             />
           </Field>
         )}
-        <Field label={splitting ? "Valor total *" : "Valor *"}>
+        <Field label={parcelando ? "Valor total *" : "Valor *"}>
           <MoneyInput cents={amount} onChange={setAmount} required autoFocus={!initial} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
@@ -163,27 +181,59 @@ export function EntryForm({
             </select>
           </Field>
         )}
-        {canPartial && (
+        {canParcelar && (
           <div className="rounded-lg border border-[var(--border)] p-3 space-y-3">
             <label className="flex items-center gap-2 text-sm font-medium">
-              <input type="checkbox" checked={partial} onChange={(e) => setPartial(e.target.checked)} />
-              Pagamento parcial (paguei só uma parte agora)
+              <input type="checkbox" checked={parcelar} onChange={(e) => setParcelar(e.target.checked)} />
+              Compra parcelada (entrada + parcelas)
             </label>
-            {partial && (
+            {parcelar && (
               <>
-                <Field label="Valor pago agora *" hint="Quanto foi pago neste momento — só isto entra no acerto entre as partes.">
-                  <MoneyInput cents={paidNow} onChange={setPaidNow} required />
+                <Field label="Entrada paga agora (opcional)" hint="Quanto foi pago à vista agora. Deixe vazio se comprou tudo a prazo. Só a entrada entra no acerto entre as partes.">
+                  <MoneyInput cents={paidNow} onChange={setPaidNow} />
                 </Field>
-                <Field label="Vencimento do saldo *" hint="Quando o restante precisa ser pago.">
-                  <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
-                </Field>
-                {amount != null && paidNow != null && (
-                  <p className={`rounded-lg p-2 text-sm ${remaining != null && remaining > 0 ? "bg-[var(--warn-bg)] text-[var(--warn)]" : "bg-[var(--bad-bg)] text-[var(--bad)]"}`}>
-                    {remaining != null && remaining > 0
-                      ? <>Saldo a pagar: <strong>{formatCents(remaining)}</strong> — fica em aberto (sem parte A/B) até ser pago.</>
-                      : "O valor pago deve ser menor que o total."}
-                  </p>
-                )}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="field-label">Parcelas a pagar</span>
+                    {saldo != null && (
+                      <span className={`text-xs ${restante === 0 ? "text-[var(--good)]" : "text-[var(--muted)]"}`}>
+                        {restante === 0 ? "✓ parcelas fecham o saldo" : `Falta distribuir ${formatCents(Math.max(0, restante ?? 0))}`}
+                      </span>
+                    )}
+                  </div>
+                  {parcelas.map((p, i) => (
+                    <div key={i} className="flex gap-2">
+                      <div className="flex-1">
+                        <MoneyInput cents={p.amount} onChange={(c) => setParcelas((xs) => xs.map((x, j) => (j === i ? { ...x, amount: c } : x)))} />
+                      </div>
+                      <input
+                        type="date"
+                        className="input flex-1"
+                        value={p.due}
+                        onChange={(e) => setParcelas((xs) => xs.map((x, j) => (j === i ? { ...x, due: e.target.value } : x)))}
+                        aria-label={`Vencimento da parcela ${i + 1}`}
+                      />
+                      {parcelas.length > 1 && (
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setParcelas((xs) => xs.filter((_, j) => j !== i))} aria-label="Remover parcela">
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setParcelas((xs) => [...xs, { amount: null, due: "" }])}>
+                      + parcela
+                    </button>
+                    {saldo != null && saldo > 0 && (
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={distribuirIgual}>
+                        Dividir o saldo igualmente
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="rounded-lg bg-[var(--warn-bg)] p-2 text-xs text-[var(--warn)]">
+                  As parcelas ficam em Contas a pagar (em aberto, sem parte A/B) até cada uma ser paga.
+                </p>
               </>
             )}
           </div>
@@ -237,13 +287,13 @@ export function EntryForm({
         ) : (
           preview && (
             <p className="rounded-lg bg-[var(--info-bg)] p-3 text-sm text-[var(--info)]">
-              {splitting && "Sobre a parcela paga agora — "}Rateio {share.num}/{share.den} – {share.den - share.num}/{share.den}: {preview}.
+              {parcelando && "Sobre a entrada paga agora — "}Rateio {share.num}/{share.den} – {share.den - share.num}/{share.den}: {preview}.
             </p>
           )
         )}
       </div>
       <FormError error={error} />
-      <SubmitBar busy={busy || !!locked} label={initial ? "Salvar alterações" : isExp && status === "a_pagar" ? "Registrar conta" : "Lançar"}>
+      <SubmitBar busy={busy || !!locked || parcelasInvalid} label={initial ? "Salvar alterações" : parcelando ? "Lançar compra parcelada" : isExp && status === "a_pagar" ? "Registrar conta" : "Lançar"}>
         {initial && <DeleteButton url={`${base}/${initial.id}`} redirect={list} confirmText="Excluir este lançamento? Fica registrado na auditoria." />}
       </SubmitBar>
     </form>

@@ -51,7 +51,7 @@ export default async function ContasAPagarPage() {
                     {r.description ?? "—"}
                     {r.paidCents != null && (
                       <div className="text-xs text-[var(--muted)]">
-                        Saldo de despesa de {formatCents(r.amountCents + r.paidCents)} — {formatCents(r.paidCents)} já pago{r.paidDate ? ` em ${formatDateBR(r.paidDate)}` : ""}
+                        Parcela de uma compra — entrada de {formatCents(r.paidCents)} paga{r.paidDate ? ` em ${formatDateBR(r.paidDate)}` : ""}
                       </div>
                     )}
                     {(r.animalTag || r.lotName) && <div className="text-xs text-[var(--muted)]">{[r.animalTag && `animal ${r.animalTag}`, r.lotName].filter(Boolean).join(" · ")}</div>}
