@@ -314,4 +314,46 @@ d("finanças (integração)", () => {
     expect(semEntrada.length).toBe(2);
     expect(semEntrada.every((p) => p.paidCents == null)).toBe(true);
   });
+
+  it("compra parcelada com entradas de partes diferentes (A e B)", async () => {
+    const balBefore = await computeBalance(db);
+    // total R$ 1.200: entrada R$ 300 (A) + R$ 300 (B) + 2 parcelas de R$ 300
+    const r = await createExpense(db, U.A, {
+      date: "2026-10-05",
+      amountCents: 120000,
+      categoryId: catDesp,
+      downPayments: [
+        { paidByUserId: U.A.id, amountCents: 30000 },
+        { paidByUserId: U.B1.id, amountCents: 30000 },
+      ],
+      installments: [
+        { amountCents: 30000, dueDate: "2026-11-10" },
+        { amountCents: 30000, dueDate: "2026-12-10" },
+      ],
+      description: "entrada dividida entre as partes",
+    });
+    // a linha retornada é a 1ª entrada (A)
+    const [e0] = await db.select().from(expenses).where(eq(expenses.id, r.id));
+    expect(e0.status).toBe("pago");
+    expect(e0.party).toBe("A");
+    expect(e0.amountCents).toBe(30000);
+    // A paga R$ 300 e B paga R$ 300 (participação 1/2 em 2026) → efeitos se cancelam, saldo igual
+    expect(await computeBalance(db)).toBe(balBefore);
+    // 2 parcelas em aberto, vinculadas à entrada âncora (A)
+    const pay = (await listPayables(db)).filter((p) => p.dueDate === "2026-11-10" || p.dueDate === "2026-12-10");
+    expect(pay.length).toBe(2);
+    expect(pay.reduce((s, p) => s + p.amountCents, 0)).toBe(60000);
+    expect(pay.every((p) => p.paidCents === 30000)).toBe(true);
+
+    // soma (entradas + parcelas) diferente do total é rejeitada
+    await expect(
+      createExpense(db, U.A, {
+        date: "2026-10-05",
+        amountCents: 120000,
+        categoryId: catDesp,
+        downPayments: [{ paidByUserId: U.A.id, amountCents: 30000 }],
+        installments: [{ amountCents: 30000, dueDate: "2026-11-10" }],
+      }),
+    ).rejects.toThrow(/soma das parcelas/i);
+  });
 });

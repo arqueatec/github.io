@@ -270,6 +270,8 @@ export const expenseCreateSchema = z
     paidNowCents: optCents,
     /** Compra parcelada: parcelas do saldo (cada uma vira uma conta a pagar). */
     installments: z.array(z.object({ amountCents: cents, dueDate: isoDate })).max(60).optional(),
+    /** Entradas da compra parcelada: cada uma paga por um usuário (a parte é derivada). */
+    downPayments: z.array(z.object({ paidByUserId: z.coerce.number().int().positive(), amountCents: cents })).max(10).optional(),
     species: z.enum(FINANCE_SPECIES).default("ambos"),
     animalTag: optTag,
     lotId: optInt,
@@ -278,10 +280,16 @@ export const expenseCreateSchema = z
   .superRefine((v, ctx) => {
     const hasInst = (v.installments?.length ?? 0) > 0;
     if (hasInst) {
-      const paid = v.paidNowCents ?? 0;
+      const downs =
+        v.downPayments && v.downPayments.length > 0
+          ? v.downPayments
+          : v.paidNowCents != null && v.paidNowCents > 0
+            ? [{ paidByUserId: v.paidByUserId ?? 0, amountCents: v.paidNowCents }]
+            : [];
+      const paid = downs.reduce((s, d) => s + d.amountCents, 0);
       if (paid >= v.amountCents)
-        ctx.addIssue({ code: "custom", path: ["paidNowCents"], message: "A entrada deve ser menor que o total" });
-      if (paid > 0 && !v.paidByUserId)
+        ctx.addIssue({ code: "custom", path: ["installments"], message: "A entrada deve ser menor que o total" });
+      if (v.paidNowCents != null && v.paidNowCents > 0 && !v.downPayments?.length && !v.paidByUserId)
         ctx.addIssue({ code: "custom", path: ["paidByUserId"], message: "Informe quem pagou a entrada" });
       const sum = v.installments!.reduce((s, p) => s + p.amountCents, 0);
       if (sum !== v.amountCents - paid)
