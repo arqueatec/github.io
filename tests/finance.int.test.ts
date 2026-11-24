@@ -203,4 +203,49 @@ d("finanças (integração)", () => {
     // pagar de novo é bloqueado
     await expect(payExpense(db, U.A, r.id, { paidByUserId: U.A.id, date: "2026-02-08" })).rejects.toThrow(/já está paga/);
   });
+
+  it("pagamento parcial: parcela paga entra no acerto e o saldo vira conta a pagar em aberto", async () => {
+    const balBefore = await computeBalance(db);
+    // despesa de R$ 300: paga R$ 100 agora (Parte A), saldo R$ 200 a pagar em 2026-04-10
+    const r = await createExpense(db, U.A, {
+      date: "2026-03-05",
+      amountCents: 30000,
+      categoryId: catDesp,
+      status: "pago",
+      paidByUserId: U.A.id,
+      paidNowCents: 10000,
+      dueDate: "2026-04-10",
+      description: "ração parcelada",
+    });
+    // a linha retornada é a parcela paga
+    const [paid] = await db.select().from(expenses).where(eq(expenses.id, r.id));
+    expect(paid.status).toBe("pago");
+    expect(paid.amountCents).toBe(10000);
+    expect(paid.party).toBe("A");
+    expect(paid.parentExpenseId).toBeNull();
+    // só a parcela paga afeta o saldo: participação de B em 2026 (1/2) sobre R$ 100 = R$ 50
+    expect(await computeBalance(db)).toBe(balBefore + 5000);
+
+    // o saldo de R$ 200 está em contas a pagar, vinculado à parcela paga, sem parte
+    const payables = await listPayables(db);
+    const rest = payables.find((p) => p.paidCents != null && p.dueDate === "2026-04-10");
+    expect(rest).toBeTruthy();
+    expect(rest!.amountCents).toBe(20000);
+    expect(rest!.paidCents).toBe(10000);
+    const [restRow] = await db.select().from(expenses).where(eq(expenses.id, rest!.id));
+    expect(restRow.status).toBe("a_pagar");
+    expect(restRow.party).toBeNull();
+    expect(restRow.paidByUserId).toBeNull();
+    expect(restRow.parentExpenseId).toBe(r.id);
+
+    // ao pagar o saldo (Parte A), ele entra no acerto: B passa a dever mais 1/2 de R$ 200 = R$ 100
+    await payExpense(db, U.A, rest!.id, { paidByUserId: U.A.id, date: "2026-04-08" });
+    expect(await computeBalance(db)).toBe(balBefore + 5000 + 10000);
+    expect((await listPayables(db)).some((p) => p.id === rest!.id)).toBe(false);
+
+    // valor pago >= total é rejeitado
+    await expect(
+      createExpense(db, U.A, { date: "2026-03-05", amountCents: 10000, categoryId: catDesp, status: "pago", paidByUserId: U.A.id, paidNowCents: 10000, dueDate: "2026-04-10" }),
+    ).rejects.toThrow(/menor que o total/);
+  });
 });

@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { alias as aliasTable } from "drizzle-orm/pg-core";
 import type { DB, Exec } from "@/db";
 import { animals, categories, expenses, lots, reimbursements, revenues, shareConfigs, users } from "@/db/schema";
 import { buildLedger, partyTotals, type LedgerInput, type Party, type Share } from "@/domain/ledger";
@@ -60,26 +61,53 @@ export async function createExpense(db: DB, actor: Actor, raw: unknown): Promise
       assertDecision(canCreateFinancial(actor, input.date, await getLockedUntil(tx)));
       await requireCategory(tx, input.categoryId, "despesa");
       const payable = input.status === "a_pagar";
+      // Pagamento parcial: parte paga agora + saldo que vira conta a pagar (total − pago).
+      const splitting = !payable && input.paidNowCents != null && input.paidNowCents < input.amountCents;
       // Conta a pagar: pagador/parte só são definidos quando ela for paga.
       const payer = payable ? null : await requireActiveUser(tx, input.paidByUserId!, "Pagador");
-      const values = {
-        clientRef: input.clientRef ?? null,
-        date: input.date,
-        amountCents: input.amountCents,
+      const animalId = await resolveAnimalTag(tx, input.animalTag);
+      const lotId = await requireLot(tx, input.lotId);
+      const receiptId = await saveAttachment(tx, input.receipt, actor.id);
+      const common = {
         categoryId: input.categoryId,
         description: input.description ?? null,
-        status: input.status,
-        dueDate: payable ? input.dueDate ?? null : null,
-        paidByUserId: payer?.id ?? null,
-        party: payer?.party ?? null,
         species: input.species ?? "ambos",
-        animalId: await resolveAnimalTag(tx, input.animalTag),
-        lotId: await requireLot(tx, input.lotId),
-        receiptId: await saveAttachment(tx, input.receipt, actor.id),
+        animalId,
+        lotId,
         createdBy: actor.id,
       };
-      const [row] = await tx.insert(expenses).values(values).returning();
+      const [row] = await tx
+        .insert(expenses)
+        .values({
+          ...common,
+          clientRef: input.clientRef ?? null,
+          date: input.date,
+          amountCents: splitting ? input.paidNowCents! : input.amountCents,
+          status: input.status,
+          dueDate: payable ? input.dueDate ?? null : null,
+          paidByUserId: payer?.id ?? null,
+          party: payer?.party ?? null,
+          receiptId,
+        })
+        .returning();
       await audit(tx, actor.id, "expense", row.id, "create", null, row);
+      if (splitting) {
+        // Saldo a pagar: conta em aberto (sem parte A/B) vinculada à parcela paga.
+        const [rest] = await tx
+          .insert(expenses)
+          .values({
+            ...common,
+            date: input.date,
+            amountCents: input.amountCents - input.paidNowCents!,
+            status: "a_pagar",
+            dueDate: input.dueDate ?? null,
+            paidByUserId: null,
+            party: null,
+            parentExpenseId: row.id,
+          })
+          .returning();
+        await audit(tx, actor.id, "expense", rest.id, "create", null, rest);
+      }
       return { id: row.id, duplicate: false };
     });
   } catch (e) {
@@ -412,6 +440,8 @@ export async function listPayables(db: Exec, f: FinanceFilter = {}) {
   if (f.end) conds.push(lte(expenses.dueDate, f.end));
   if (f.species) conds.push(sql`(${expenses.species} = ${f.species} or ${expenses.species} = 'ambos')`);
   if (f.categoryId) conds.push(eq(expenses.categoryId, f.categoryId));
+  // Quando a conta é o saldo de um pagamento parcial, trazemos a parcela já paga (parent).
+  const parent = aliasTable(expenses, "parent_expense");
   return db
     .select({
       id: expenses.id,
@@ -425,6 +455,9 @@ export async function listPayables(db: Exec, f: FinanceFilter = {}) {
       animalTag: animals.tag,
       lotName: lots.name,
       receiptId: expenses.receiptId,
+      /** Parcela já paga de um pagamento parcial (null quando é uma conta avulsa). */
+      paidCents: parent.amountCents,
+      paidDate: parent.date,
       createdBy: expenses.createdBy,
       createdAt: expenses.createdAt,
     })
@@ -432,6 +465,7 @@ export async function listPayables(db: Exec, f: FinanceFilter = {}) {
     .innerJoin(categories, eq(categories.id, expenses.categoryId))
     .leftJoin(animals, eq(animals.id, expenses.animalId))
     .leftJoin(lots, eq(lots.id, expenses.lotId))
+    .leftJoin(parent, eq(parent.id, expenses.parentExpenseId))
     .where(and(...conds))
     .orderBy(asc(expenses.dueDate), asc(expenses.id));
 }

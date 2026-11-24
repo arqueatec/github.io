@@ -263,6 +263,11 @@ export const expenseCreateSchema = z
     status: z.enum(EXPENSE_STATUS).default("pago"),
     dueDate: optDate,
     paidByUserId: optInt,
+    /**
+     * Pagamento parcial: valor já pago agora (status 'pago'). Quando informado e menor que o
+     * total, o saldo (total − pago) vira uma conta a pagar com o vencimento em `dueDate`.
+     */
+    paidNowCents: optCents,
     species: z.enum(FINANCE_SPECIES).default("ambos"),
     animalTag: optTag,
     lotId: optInt,
@@ -273,6 +278,14 @@ export const expenseCreateSchema = z
       ctx.addIssue({ code: "custom", path: ["paidByUserId"], message: "Informe quem pagou" });
     if (v.status === "a_pagar" && !v.dueDate)
       ctx.addIssue({ code: "custom", path: ["dueDate"], message: "Informe o vencimento da conta" });
+    if (v.paidNowCents != null) {
+      if (v.status !== "pago")
+        ctx.addIssue({ code: "custom", path: ["paidNowCents"], message: "Pagamento parcial só vale para despesa paga" });
+      if (v.paidNowCents >= v.amountCents)
+        ctx.addIssue({ code: "custom", path: ["paidNowCents"], message: "O valor pago deve ser menor que o total" });
+      if (!v.dueDate)
+        ctx.addIssue({ code: "custom", path: ["dueDate"], message: "Informe o vencimento do saldo a pagar" });
+    }
   });
 export type ExpenseCreate = z.infer<typeof expenseCreateSchema>;
 export const expenseUpdateSchema = z

@@ -472,6 +472,8 @@ async function main() {
   expense(addDays(TODAY, -20), A, "Ração/sal mineral", 78000, "Ração a prazo — loja agropecuária", { status: "a_pagar", dueDate: addDays(TODAY, -3) });
   expense(addDays(TODAY, -10), B1, "Veterinário", 32000, "Consulta veterinária (boleto)", { status: "a_pagar", dueDate: addDays(TODAY, 7), species: "bovino" });
   expense(addDays(TODAY, -5), B2, "Cerca e infraestrutura", 150000, "Material de cerca (parcela)", { status: "a_pagar", dueDate: addDays(TODAY, 25) });
+  // pagamento parcial: R$ 3.000 de ração, R$ 1.000 pagos agora (Parte A), saldo de R$ 2.000 a pagar
+  expense(addDays(TODAY, -8), A, "Ração/sal mineral", 300000, "Compra de ração (pagamento parcial)", { paidNowCents: 100000, dueDate: addDays(TODAY, 27) });
   revenue("2025-01-20", A, "Lã", 38000, "Venda de lã");
   revenue("2026-01-25", B2, "Lã", 41000, "Venda de lã");
   for (const d of ["2025-04-05", "2025-10-12", "2026-04-08", "2026-09-15"]) revenue(d, randomPerson(), "Esterco", between(18000, 30000), "Venda de esterco");

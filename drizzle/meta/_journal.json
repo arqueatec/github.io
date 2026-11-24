@@ -43,6 +43,13 @@
       "when": 1795475418838,
       "tag": "0005_expense_payable",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795481070435,
+      "tag": "0006_expense_partial",
+      "breakpoints": true
     }
   ]
 }

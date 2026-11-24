@@ -49,6 +49,9 @@ export function EntryForm({
   const [userId, setUserId] = useState(String(initial?.userId ?? currentUserId));
   const [status, setStatus] = useState<"pago" | "a_pagar">(initial?.status ?? "pago");
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? "");
+  // Pagamento parcial (só na criação de despesa paga): parte paga agora + saldo a pagar.
+  const [partial, setPartial] = useState(false);
+  const [paidNow, setPaidNow] = useState<number | null>(null);
   const [species, setSpecies] = useState<FinSpecies>(initial?.species ?? "ambos");
   const [animalTag, setAnimalTag] = useState(initial?.animalTag ?? "");
   const [lotId, setLotId] = useState(initial?.lotId ? String(initial.lotId) : "");
@@ -60,11 +63,17 @@ export function EntryForm({
   const list = isExp ? "/financeiro/despesas" : "/financeiro/receitas";
   const who = users.find((u) => String(u.id) === userId);
   const locked = lockedUntil && date <= lockedUntil;
+  // Pagamento parcial válido: criação de despesa paga, com valor pago informado e menor que o total.
+  const canPartial = isExp && !initial && status === "pago";
+  const splitting = canPartial && partial;
+  const remaining = splitting && amount != null && paidNow != null ? amount - paidNow : null;
+  // valor que de fato afeta o saldo entre as partes (no parcial, só a parcela paga agora)
+  const effectAmount = splitting ? paidNow : amount;
   // prévia do efeito no saldo
   let preview = "";
-  if (amount && who) {
-    const a = mulFrac(amount, share.num, share.den);
-    const b = amount - a;
+  if (effectAmount && who) {
+    const a = mulFrac(effectAmount, share.num, share.den);
+    const b = effectAmount - a;
     if (isExp) preview = who.party === "A" ? `Parte B passa a dever ${formatCents(b)} à Parte A` : `Parte A passa a dever ${formatCents(a)} à Parte B`;
     else preview = who.party === "A" ? `Parte A passa a dever ${formatCents(b)} à Parte B` : `Parte B passa a dever ${formatCents(a)} à Parte A`;
   }
@@ -88,19 +97,22 @@ export function EntryForm({
           body.status = status;
           body.animalTag = animalTag || null;
           body.paidByUserId = payable ? null : Number(userId);
-          body.dueDate = payable ? dueDate : null;
+          body.dueDate = payable ? dueDate : splitting ? dueDate : null;
+          if (splitting) body.paidNowCents = paidNow;
         } else {
           body.receivedByUserId = Number(userId);
         }
         const noun = isExp ? (payable ? "Conta a pagar" : "Despesa") : "Receita";
+        // Após um lançamento que gera conta pendente (a pagar ou parcial), leva à lista de contas.
+        const toPayables = payable || splitting;
         if (initial) {
           body.removeReceipt = removeReceipt;
           void submit("PATCH", `${base}/${initial.id}`, body, { success: "Lançamento atualizado", redirect: payable ? "/financeiro/contas-a-pagar" : list });
         } else {
           void submit("POST", base, body, {
             offline: `${noun} ${amount ? formatCents(amount) : ""}`,
-            success: `${noun} ${payable ? "registrada" : "lançada"}`,
-            redirect: payable ? "/financeiro/contas-a-pagar" : list,
+            success: splitting ? "Despesa lançada — saldo em Contas a pagar" : `${noun} ${payable ? "registrada" : "lançada"}`,
+            redirect: toPayables ? "/financeiro/contas-a-pagar" : list,
           });
         }
       }}
@@ -118,7 +130,7 @@ export function EntryForm({
             />
           </Field>
         )}
-        <Field label="Valor *">
+        <Field label={splitting ? "Valor total *" : "Valor *"}>
           <MoneyInput cents={amount} onChange={setAmount} required autoFocus={!initial} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
@@ -150,6 +162,31 @@ export function EntryForm({
               ))}
             </select>
           </Field>
+        )}
+        {canPartial && (
+          <div className="rounded-lg border border-[var(--border)] p-3 space-y-3">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" checked={partial} onChange={(e) => setPartial(e.target.checked)} />
+              Pagamento parcial (paguei só uma parte agora)
+            </label>
+            {partial && (
+              <>
+                <Field label="Valor pago agora *" hint="Quanto foi pago neste momento — só isto entra no acerto entre as partes.">
+                  <MoneyInput cents={paidNow} onChange={setPaidNow} required />
+                </Field>
+                <Field label="Vencimento do saldo *" hint="Quando o restante precisa ser pago.">
+                  <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
+                </Field>
+                {amount != null && paidNow != null && (
+                  <p className={`rounded-lg p-2 text-sm ${remaining != null && remaining > 0 ? "bg-[var(--warn-bg)] text-[var(--warn)]" : "bg-[var(--bad-bg)] text-[var(--bad)]"}`}>
+                    {remaining != null && remaining > 0
+                      ? <>Saldo a pagar: <strong>{formatCents(remaining)}</strong> — fica em aberto (sem parte A/B) até ser pago.</>
+                      : "O valor pago deve ser menor que o total."}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         )}
         <Field label="A que se refere" hint="Use Geral quando valer para os dois (ex.: sal mineral, mão de obra).">
           <Segmented
@@ -200,7 +237,7 @@ export function EntryForm({
         ) : (
           preview && (
             <p className="rounded-lg bg-[var(--info-bg)] p-3 text-sm text-[var(--info)]">
-              Rateio {share.num}/{share.den} – {share.den - share.num}/{share.den}: {preview}.
+              {splitting && "Sobre a parcela paga agora — "}Rateio {share.num}/{share.den} – {share.den - share.num}/{share.den}: {preview}.
             </p>
           )
         )}

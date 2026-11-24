@@ -387,6 +387,11 @@ export const expenses = pgTable(
     status: expenseStatusEnum("status").notNull().default("pago"),
     /** Vencimento da conta a pagar. */
     dueDate: date("due_date"),
+    /**
+     * Pagamento parcial: quando uma despesa é lançada paga em parte, a parcela paga é esta
+     * linha e o saldo vira uma conta a pagar que aponta para ela por este campo. Nulo no caso comum.
+     */
+    parentExpenseId: integer("parent_expense_id").references((): AnyPgColumn => expenses.id, { onDelete: "set null" }),
     /** Pagador: nulo enquanto a conta está "a pagar"; definido ao marcar como paga. */
     paidByUserId: integer("paid_by_user_id").references(() => users.id),
     /** Parte derivada do usuário pagante (snapshot). Nula enquanto "a pagar". */
