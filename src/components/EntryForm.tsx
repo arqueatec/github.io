@@ -49,9 +49,9 @@ export function EntryForm({
   const [userId, setUserId] = useState(String(initial?.userId ?? currentUserId));
   const [status, setStatus] = useState<"pago" | "a_pagar">(initial?.status ?? "pago");
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? "");
-  // Compra parcelada (só na criação de despesa paga): entrada opcional + N parcelas.
+  // Compra parcelada (só na criação de despesa paga): entrada(s) por parte + N parcelas.
   const [parcelar, setParcelar] = useState(false);
-  const [paidNow, setPaidNow] = useState<number | null>(null);
+  const [entradas, setEntradas] = useState<{ payerId: string; amount: number | null }[]>([{ payerId: String(currentUserId), amount: null }]);
   const [parcelas, setParcelas] = useState<{ amount: number | null; due: string }[]>([{ amount: null, due: "" }]);
   const [species, setSpecies] = useState<FinSpecies>(initial?.species ?? "ambos");
   const [animalTag, setAnimalTag] = useState(initial?.animalTag ?? "");
@@ -67,19 +67,21 @@ export function EntryForm({
   // Parcelamento válido: criação de despesa paga (entrada opcional + parcelas do saldo).
   const canParcelar = isExp && !initial && status === "pago";
   const parcelando = canParcelar && parcelar;
-  const entrada = paidNow ?? 0;
-  const saldo = parcelando && amount != null ? amount - entrada : null;
+  const entradaTotal = entradas.reduce((s, e) => s + (e.amount ?? 0), 0);
+  const saldo = parcelando && amount != null ? amount - entradaTotal : null;
   const somaParcelas = parcelas.reduce((s, p) => s + (p.amount ?? 0), 0);
   const restante = saldo != null ? saldo - somaParcelas : null;
-  const parcelasInvalid = parcelando && (amount == null || entrada >= amount || restante !== 0 || parcelas.some((p) => !p.amount || !p.due));
+  const parcelasInvalid =
+    parcelando &&
+    (amount == null || entradaTotal >= amount || restante !== 0 || parcelas.some((p) => !p.amount || !p.due) || entradas.some((e) => e.amount != null && e.amount > 0 && !e.payerId));
   const distribuirIgual = () => {
     if (saldo == null || saldo <= 0) return;
     const n = parcelas.length;
     const base = Math.floor(saldo / n);
     setParcelas((xs) => xs.map((x, i) => ({ ...x, amount: i === n - 1 ? saldo - base * (n - 1) : base })));
   };
-  // valor que de fato afeta o saldo entre as partes (no parcelamento, só a entrada paga)
-  const effectAmount = parcelando ? (entrada > 0 ? entrada : null) : amount;
+  // valor que de fato afeta o saldo entre as partes (no parcelamento, cada entrada entra pela sua parte)
+  const effectAmount = parcelando ? null : amount;
   // prévia do efeito no saldo
   let preview = "";
   if (effectAmount && who) {
@@ -107,9 +109,10 @@ export function EntryForm({
         if (isExp) {
           body.animalTag = animalTag || null;
           if (parcelando) {
-            body.status = entrada > 0 ? "pago" : "a_pagar";
-            body.paidByUserId = entrada > 0 ? Number(userId) : null;
-            body.paidNowCents = entrada > 0 ? paidNow : null;
+            const downs = entradas.filter((e) => e.amount && e.amount > 0 && e.payerId).map((e) => ({ paidByUserId: Number(e.payerId), amountCents: e.amount }));
+            body.status = downs.length > 0 ? "pago" : "a_pagar";
+            body.paidByUserId = null;
+            body.downPayments = downs;
             body.installments = parcelas.filter((p) => p.amount && p.due).map((p) => ({ amountCents: p.amount, dueDate: p.due }));
             body.dueDate = null;
           } else {
@@ -170,7 +173,7 @@ export function EntryForm({
           <Field label="Vencimento *" hint="Quando esta conta precisa ser paga. O pagador é definido ao marcar como paga.">
             <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
           </Field>
-        ) : (
+        ) : parcelando ? null : (
           <Field label={isExp ? "Quem pagou" : "Quem recebeu"} hint={who ? `Parte ${who.party} (derivada do usuário)` : undefined}>
             <select className="select" value={userId} onChange={(e) => setUserId(e.target.value)}>
               {users.map((u) => (
@@ -189,9 +192,40 @@ export function EntryForm({
             </label>
             {parcelar && (
               <>
-                <Field label="Entrada paga agora (opcional)" hint="Quanto foi pago à vista agora. Deixe vazio se comprou tudo a prazo. Só a entrada entra no acerto entre as partes.">
-                  <MoneyInput cents={paidNow} onChange={setPaidNow} />
-                </Field>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="field-label">Entrada paga agora (opcional)</span>
+                    {amount != null && <span className="text-xs text-[var(--muted)]">Saldo a parcelar: {formatCents(Math.max(0, (amount ?? 0) - entradaTotal))}</span>}
+                  </div>
+                  {entradas.map((e, i) => (
+                    <div key={i} className="flex gap-2">
+                      <select
+                        className="select flex-1"
+                        value={e.payerId}
+                        onChange={(ev) => setEntradas((xs) => xs.map((x, j) => (j === i ? { ...x, payerId: ev.target.value } : x)))}
+                        aria-label={`Quem pagou a entrada ${i + 1}`}
+                      >
+                        {users.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name} — Parte {u.party}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex-1">
+                        <MoneyInput cents={e.amount} onChange={(c) => setEntradas((xs) => xs.map((x, j) => (j === i ? { ...x, amount: c } : x)))} />
+                      </div>
+                      {entradas.length > 1 && (
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEntradas((xs) => xs.filter((_, j) => j !== i))} aria-label="Remover entrada">
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEntradas((xs) => [...xs, { payerId: String(currentUserId), amount: null }])}>
+                    + entrada (outra parte)
+                  </button>
+                  <p className="text-xs text-[var(--muted)]">Quem pagou cada parte da entrada. Só a entrada entra no acerto. Deixe sem valor se comprou tudo a prazo.</p>
+                </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="field-label">Parcelas a pagar</span>
@@ -296,7 +330,7 @@ export function EntryForm({
         <p className="text-sm text-[var(--bad)]">
           {amount == null
             ? "Informe o valor total."
-            : entrada >= amount
+            : entradaTotal >= amount
               ? "A entrada deve ser menor que o total."
               : restante !== 0
                 ? `Ajuste as parcelas: ${restante! > 0 ? `faltam ${formatCents(restante!)}` : `passou ${formatCents(-restante!)}`} para fechar o saldo (total − entrada).`

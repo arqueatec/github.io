@@ -71,28 +71,34 @@ export async function createExpense(db: DB, actor: Actor, raw: unknown): Promise
         createdBy: actor.id,
       };
 
-      // Compra parcelada: entrada opcional (1 linha paga) + N parcelas (contas a pagar).
+      // Compra parcelada: entrada(s) opcional(is), cada uma paga por uma parte, + N parcelas.
       const installments = input.installments ?? [];
       if (installments.length > 0) {
-        const paid = input.paidNowCents ?? 0;
+        const downs =
+          input.downPayments && input.downPayments.length > 0
+            ? input.downPayments
+            : input.paidNowCents != null && input.paidNowCents > 0
+              ? [{ paidByUserId: input.paidByUserId!, amountCents: input.paidNowCents }]
+              : [];
         let anchorId: number | null = null;
-        if (paid > 0) {
-          const payer = await requireActiveUser(tx, input.paidByUserId!, "Pagador");
+        for (const [idx, d] of downs.entries()) {
+          const payer = await requireActiveUser(tx, d.paidByUserId, "Pagador");
           const [entrada] = await tx
             .insert(expenses)
             .values({
               ...common,
-              clientRef: input.clientRef ?? null,
+              // recibo/clientRef vão na 1ª entrada (âncora de idempotência)
+              clientRef: idx === 0 ? input.clientRef ?? null : null,
               date: input.date,
-              amountCents: paid,
+              amountCents: d.amountCents,
               status: "pago",
               paidByUserId: payer.id,
               party: payer.party,
-              receiptId: await saveAttachment(tx, input.receipt, actor.id),
+              receiptId: idx === 0 ? await saveAttachment(tx, input.receipt, actor.id) : null,
             })
             .returning();
           await audit(tx, actor.id, "expense", entrada.id, "create", null, entrada);
-          anchorId = entrada.id;
+          if (idx === 0) anchorId = entrada.id;
         }
         let firstId: number | null = null;
         for (const [idx, p] of installments.entries()) {
