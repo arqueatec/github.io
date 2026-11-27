@@ -16,6 +16,7 @@ export default async function MaisPage() {
     ["/conta", "👤", "Minha conta e senha"],
   ];
   if (user.role === "admin") {
+    items.push(["/perfumes", "🧴", "Perfumes (estoque e caixa da revenda)"]);
     items.push(["/admin", "⚙️", "Administração (usuários, percentuais, categorias, lotes)"]);
     items.push(["/admin/auditoria", "🕵️", "Auditoria"]);
   }

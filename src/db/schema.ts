@@ -35,6 +35,8 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
 
 export const roleEnum = pgEnum("user_role", ["admin", "socio"]);
 export const partyEnum = pgEnum("party", ["A", "B"]);
+/** Área do app que o usuário acessa: rebanho (gado/ovinos) ou perfumes (revenda). */
+export const userAreaEnum = pgEnum("user_area", ["rebanho", "perfumes"]);
 export const sexEnum = pgEnum("sex", ["M", "F"]);
 /** Espécie do animal. */
 export const speciesEnum = pgEnum("species", ["ovino", "bovino"]);
@@ -79,6 +81,8 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: roleEnum("role").notNull().default("socio"),
   party: partyEnum("party").notNull(),
+  /** Módulo que o usuário acessa ao entrar. Admin acessa ambos. */
+  area: userAreaEnum("area").notNull().default("rebanho"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -506,6 +510,64 @@ export const inventoryCountItems = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("count_items_uq").on(t.countId, t.tag)],
+);
+
+// ---------------------------------------------------------------- Perfumes (revenda)
+
+/** Movimento de estoque/caixa de perfume: venda (sai estoque, entra caixa),
+ * compra/reposição (entra estoque, sai caixa) ou ajuste manual de estoque. */
+export const perfumeMovementEnum = pgEnum("perfume_movement", ["venda", "compra", "ajuste"]);
+
+export const perfumes = pgTable(
+  "perfumes",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    /** Custo de compra unitário (centavos). */
+    costCents: integer("cost_cents").notNull().default(1300),
+    /** Preço de venda unitário (centavos). */
+    priceCents: integer("price_cents").notNull().default(3000),
+    /** Quantidade atual em estoque. */
+    stock: integer("stock").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    createdBy: integer("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("perfumes_name_uq").on(sql`lower(${t.name})`),
+    check("perfumes_stock_pos", sql`${t.stock} >= 0`),
+  ],
+);
+
+export const perfumeMovements = pgTable(
+  "perfume_movements",
+  {
+    id: serial("id").primaryKey(),
+    clientRef: uuid("client_ref").unique(),
+    perfumeId: integer("perfume_id")
+      .notNull()
+      .references(() => perfumes.id, { onDelete: "cascade" }),
+    kind: perfumeMovementEnum("kind").notNull(),
+    /** Quantidade movimentada (venda/compra: > 0; ajuste: delta, pode ser negativo). */
+    qty: integer("qty").notNull(),
+    /** Valor unitário (venda: preço; compra: custo; ajuste: 0), em centavos. */
+    unitCents: integer("unit_cents").notNull().default(0),
+    /** Custo unitário no momento (snapshot), para calcular lucro das vendas. */
+    unitCostCents: integer("unit_cost_cents"),
+    /** Valor total do movimento no caixa (qty × unit), em centavos. */
+    totalCents: integer("total_cents").notNull().default(0),
+    date: date("date").notNull(),
+    /** Quem vendeu (opcional, informativo). */
+    soldByUserId: integer("sold_by_user_id").references(() => users.id),
+    notes: text("notes"),
+    createdBy: integer("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [index("perfume_mov_perfume_idx").on(t.perfumeId), index("perfume_mov_date_idx").on(t.date)],
 );
 
 // ---------------------------------------------------------------- Auditoria

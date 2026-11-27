@@ -50,6 +50,13 @@
       "when": 1795481070435,
       "tag": "0006_expense_partial",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795738159862,
+      "tag": "0007_perfumes",
+      "breakpoints": true
     }
   ]
 }

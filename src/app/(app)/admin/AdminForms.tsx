@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Field, FormError, Segmented, todayLocal, useSubmit } from "@/components/forms";
 import { Badge } from "@/components/ui";
 
-type User = { id: number; name: string; email: string; role: "admin" | "socio"; party: "A" | "B"; active: boolean };
+type User = { id: number; name: string; email: string; role: "admin" | "socio"; party: "A" | "B"; area: "rebanho" | "perfumes"; active: boolean };
 
 export function UserRow({ user, isMe }: { user: User; isMe: boolean }) {
   const { submit, busy } = useSubmit();
@@ -27,6 +27,12 @@ export function UserRow({ user, isMe }: { user: User; isMe: boolean }) {
         </select>
       </td>
       <td>
+        <select className="select min-h-9 py-0" value={user.area} disabled={busy} onChange={(e) => patch({ area: e.target.value }, "Módulo alterado")}>
+          <option value="rebanho">Gado</option>
+          <option value="perfumes">Perfumes</option>
+        </select>
+      </td>
+      <td>
         <input type="checkbox" className="h-5 w-5" checked={user.active} disabled={busy || isMe} onChange={(e) => patch({ active: e.target.checked }, e.target.checked ? "Usuário ativado" : "Usuário desativado")} />
       </td>
       <td>
@@ -46,7 +52,7 @@ export function UserRow({ user, isMe }: { user: User; isMe: boolean }) {
 }
 
 export function NewUserForm() {
-  const [f, setF] = useState({ name: "", email: "", password: "", role: "socio", party: "B" as "A" | "B" });
+  const [f, setF] = useState({ name: "", email: "", password: "", role: "socio", party: "B" as "A" | "B", area: "rebanho" as "rebanho" | "perfumes" });
   const { submit, busy, error } = useSubmit();
   return (
     <form
@@ -72,6 +78,12 @@ export function NewUserForm() {
         <select className="select" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
           <option value="socio">Sócio</option>
           <option value="admin">Administrador</option>
+        </select>
+      </Field>
+      <Field label="Módulo" hint="Gado = rebanho/finanças. Perfumes = estoque e caixa dos perfumes.">
+        <select className="select" value={f.area} onChange={(e) => setF({ ...f, area: e.target.value as "rebanho" | "perfumes" })}>
+          <option value="rebanho">Gado (rebanho)</option>
+          <option value="perfumes">Perfumes</option>
         </select>
       </Field>
       <div className="sm:col-span-2">

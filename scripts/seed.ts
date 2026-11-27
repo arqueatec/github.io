@@ -11,13 +11,14 @@
 import "dotenv/config";
 import { eq, sql } from "drizzle-orm";
 import { getDb, type DB } from "@/db";
-import { animals, categories, lots, users } from "@/db/schema";
+import { animals, categories, lots, perfumes, users } from "@/db/schema";
 import { addDays, todayIso } from "@/domain/dates";
 import { computeBalance, createExpense, createReimbursement, createRevenue } from "@/server/services/finance";
 import { createAnimal, updateAnimal } from "@/server/services/animals";
 import { createBirth, createBreedings, createPregnancyCheck, createWeanings } from "@/server/services/reproduction";
 import { createHealthEvents, createWeighings } from "@/server/services/health";
 import { registerExit, registerSale } from "@/server/services/exits";
+import { sellPerfume } from "@/server/services/perfumes";
 import { closePeriod } from "@/server/services/locks";
 import { hashPasswordForSeed } from "./seed-helpers";
 import type { Actor } from "@/domain/policy";
@@ -54,12 +55,13 @@ async function main() {
 
   // ---- usuários e lotes
   const pw = await hashPasswordForSeed("demo1234");
-  const [ua, ub1, ub2] = await db
+  const [ua, ub1, ub2, uperf] = await db
     .insert(users)
     .values([
       { name: "André (admin)", email: "admin@demo.com", passwordHash: pw, role: "admin", party: "A" },
       { name: "Bruno", email: "bruno@demo.com", passwordHash: pw, role: "socio", party: "B" },
       { name: "Bernardo", email: "bernardo@demo.com", passwordHash: pw, role: "socio", party: "B" },
+      { name: "Téo (perfumes)", email: "perfume@demo.com", passwordHash: pw, role: "socio", party: "B", area: "perfumes" },
     ])
     .returning();
   const actor = (u: typeof ua): Actor => ({ id: u.id, role: u.role, party: u.party, active: true });
@@ -513,10 +515,32 @@ async function main() {
     }
     done++;
   }
+  // ---- Perfumes (módulo de revenda): catálogo + algumas vendas de exemplo
+  const perfumeCatalog: [string, number][] = [
+    ["Invictus", 30], ["Bleu de Chanel", 27], ["Ferrari Black", 46], ["Club de Nuit", 49],
+    ["Animale for Men", 19], ["Polo Blue", 25], ["212 VIP Men", 66], ["Million", 69],
+    ["Silver Scent", 69], ["Orientica Royal Amber", 19], ["Sabah Al Ward", 19], ["Miss Dior", 20],
+    ["Coco Chanel", 43], ["Yara", 17], ["Allure Homme", 29], ["Azzaro Pour Homme", 18],
+    ["Asad Bourbon", 29], ["Asad", 49], ["Chloé", 49], ["212 VIP Rose", 48],
+    ["212 Sexy", 29], ["La Vie Est Belle", 37], ["J'adore", 50],
+  ];
+  const perfRows = await db
+    .insert(perfumes)
+    .values(perfumeCatalog.map(([name, stock]) => ({ name, costCents: 1300, priceCents: 3000, stock, createdBy: uperf.id })))
+    .returning();
+  const perfActor: Actor = { id: uperf.id, role: uperf.role, party: uperf.party, active: true };
+  // ~12 vendas espalhadas nos últimos dias
+  for (let i = 0; i < 12; i++) {
+    const p = perfRows[Math.floor(Math.random() * perfRows.length)];
+    const qty = chance(0.8) ? 1 : 2;
+    await sellPerfume(db, perfActor, { perfumeId: p.id, qty, unitCents: 3000, date: addDays(TODAY, -Math.floor(Math.random() * 20)), soldByUserId: uperf.id });
+  }
+
   const [{ active }] = await db.select({ active: sql<number>`count(*)::int` }).from(animals).where(eq(animals.status, "ativo"));
   const balance = await computeBalance(db);
   console.log(`Seed concluído: ${done} eventos, ${active} animais ativos, saldo atual ${(balance / 100).toFixed(2)} (positivo = B deve a A).`);
-  console.log("Logins de demonstração (senha demo1234): admin@demo.com (admin, Parte A), bruno@demo.com e bernardo@demo.com (Parte B).");
+  console.log(`Perfumes: ${perfRows.length} produtos cadastrados no módulo de revenda.`);
+  console.log("Logins (senha demo1234): admin@demo.com (admin, Gado+Perfumes), bruno@demo.com e bernardo@demo.com (Gado), perfume@demo.com (Perfumes).");
   process.exit(0);
 }
 

@@ -75,8 +75,10 @@ export function Segmented<T extends string>({ value, onChange, options, name }: 
 /** Campo de dinheiro em texto (aceita 1.234,56). Valor externo em centavos. */
 export function MoneyInput({ cents, onChange, required, autoFocus, placeholder = "0,00" }: { cents: number | null; onChange: (c: number | null) => void; required?: boolean; autoFocus?: boolean; placeholder?: string }) {
   const [text, setText] = useState(cents ? centsToInput(cents) : "");
+  // Reflete mudanças de `cents` vindas do pai (ex.: preço preenchido ao escolher o item),
+  // sem apagar o que o usuário está digitando (quando o texto já representa o mesmo valor).
   useEffect(() => {
-    if (cents === null) setText("");
+    setText((prev) => (cents === null ? "" : parseMoneyToCents(prev) === cents ? prev : centsToInput(cents)));
   }, [cents]);
   return (
     <div className="relative">

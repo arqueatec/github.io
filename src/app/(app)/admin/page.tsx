@@ -22,7 +22,7 @@ export default async function AdminPage() {
 
       <Card title="Usuários e partes">
         <p className="mb-2 text-xs text-[var(--muted)]">Financeiramente existem duas partes. A parte de cada lançamento é derivada do usuário que pagou/recebeu.</p>
-        <Table head={["Nome", "E-mail", "Parte", "Perfil", "Ativo", ""]}>
+        <Table head={["Nome", "E-mail", "Parte", "Perfil", "Módulo", "Ativo", ""]}>
           {users.map((u) => (
             <UserRow key={u.id} user={u} isMe={u.id === me.id} />
           ))}
