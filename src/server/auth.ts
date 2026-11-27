@@ -17,6 +17,7 @@ const LOCK_MINUTES = 15;
 export interface SessionUser extends Actor {
   name: string;
   email: string;
+  area: "rebanho" | "perfumes";
 }
 
 export async function hashPassword(pw: string) {
@@ -74,6 +75,7 @@ export async function userFromToken(db: DB, token: string | undefined): Promise<
       email: users.email,
       role: users.role,
       party: users.party,
+      area: users.area,
       active: users.active,
     })
     .from(sessions)
@@ -101,6 +103,11 @@ export async function requireAdmin(): Promise<SessionUser> {
   const u = await requireUser();
   if (u.role !== "admin") throw new AccessError("Somente o administrador pode fazer isso");
   return u;
+}
+
+/** Garante que o usuário pertence à área informada (admin acessa qualquer uma). */
+export function assertArea(user: SessionUser, area: "rebanho" | "perfumes"): void {
+  if (user.role !== "admin" && user.area !== area) throw new AccessError("Acesso restrito a esta área");
 }
 
 export async function login(db: DB, emailRaw: string, password: string) {

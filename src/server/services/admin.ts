@@ -24,9 +24,9 @@ const hash = (pw: string) => bcrypt.hash(pw, 10);
 
 export async function listUsers(db: Exec) {
   return db
-    .select({ id: users.id, name: users.name, email: users.email, role: users.role, party: users.party, active: users.active, createdAt: users.createdAt })
+    .select({ id: users.id, name: users.name, email: users.email, role: users.role, party: users.party, area: users.area, active: users.active, createdAt: users.createdAt })
     .from(users)
-    .orderBy(asc(users.party), asc(users.name));
+    .orderBy(asc(users.area), asc(users.party), asc(users.name));
 }
 
 export async function createUser(db: DB, actor: Actor, raw: unknown) {
@@ -35,8 +35,8 @@ export async function createUser(db: DB, actor: Actor, raw: unknown) {
   try {
     const [row] = await db
       .insert(users)
-      .values({ name: input.name, email: input.email, passwordHash: await hash(input.password), role: input.role, party: input.party })
-      .returning({ id: users.id, name: users.name, email: users.email, role: users.role, party: users.party });
+      .values({ name: input.name, email: input.email, passwordHash: await hash(input.password), role: input.role, party: input.party, area: input.area })
+      .returning({ id: users.id, name: users.name, email: users.email, role: users.role, party: users.party, area: users.area });
     await audit(db, actor.id, "user", row.id, "create", null, row);
     return row;
   } catch (e) {
@@ -64,6 +64,7 @@ export async function updateUser(db: DB, actor: Actor, id: number, raw: unknown)
     if (input.email) patch.email = input.email;
     if (input.role) patch.role = input.role;
     if (input.party) patch.party = input.party;
+    if (input.area) patch.area = input.area;
     if (input.active !== undefined) patch.active = input.active;
     if (input.password) patch.passwordHash = await hash(input.password);
     try {

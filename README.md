@@ -43,7 +43,16 @@ Cada animal tem uma **espécie** (ovino ou bovino) com categorias próprias, e o
 | **Página da matriz** | Todos os partos com intervalo, crias (com desmame/baixa), diagnósticos, índices individuais e custos (diretos + rateio estimado). |
 | **Relatórios** | CSV (separador `;`, abre no Excel) e PDF de rebanho, despesas, receitas, reembolsos, extrato, baixas, partos, sanidade, indicadores e ranking de matrizes. |
 | **Importação** | Planilha CSV ou XLSX com validação linha a linha e gravação tudo-ou-nada; modelo para download. |
-| **Administração** | Usuários (parte, perfil, ativo, redefinir senha), participações com histórico de vigência, categorias de despesa/receita, lotes, meta do inventário, trilha de auditoria. |
+| **Administração** | Usuários (parte, perfil, **módulo**, ativo, redefinir senha), participações com histórico de vigência, categorias de despesa/receita, lotes, meta do inventário, trilha de auditoria. |
+
+### Módulo de perfumes (revenda)
+
+Além do rebanho, o app tem um segundo módulo, **Perfumes**, para controle de estoque e caixa de uma revenda — no mesmo app, com acesso por login. Cada usuário tem uma **área**: `rebanho` (gado) ou `perfumes`. Ao entrar, o usuário cai no seu módulo; o **administrador** acessa os dois e define a área de cada login.
+
+- **Estoque**: catálogo de perfumes com custo, preço de venda e quantidade; alerta de estoque baixo; importação por CSV (`nome;custo;preco;estoque`).
+- **Vendas**: baixam o estoque e entram no caixa; registram (opcional) quem vendeu.
+- **Reposição (compra)**: aumenta o estoque e sai do caixa.
+- **Caixa**: receita, custo das vendas, **lucro**, compras e saldo, com extrato e estorno de movimentos; ajuste de estoque para recontagem.
 
 ### Indicadores e fórmulas
 

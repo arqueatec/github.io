@@ -379,12 +379,15 @@ export const shareCreateSchema = z
     message: "Informe a fração (numerador ≤ denominador) ou o percentual da Parte A",
   });
 
+export const USER_AREA = ["rebanho", "perfumes"] as const;
 export const userCreateSchema = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.email("E-mail inválido").transform((s) => s.trim().toLowerCase()),
   password: z.string().min(8, "Senha com no mínimo 8 caracteres").max(200),
   role: z.enum(["admin", "socio"]),
   party: z.enum(["A", "B"]),
+  /** Módulo que o usuário acessa: rebanho (gado) ou perfumes. */
+  area: z.enum(USER_AREA).default("rebanho"),
 });
 export const userUpdateSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
@@ -392,6 +395,7 @@ export const userUpdateSchema = z.object({
   password: z.preprocess(emptyToNull, z.string().min(8, "Senha com no mínimo 8 caracteres").max(200).nullable()).optional(),
   role: z.enum(["admin", "socio"]).optional(),
   party: z.enum(["A", "B"]).optional(),
+  area: z.enum(USER_AREA).optional(),
   active: z.boolean().optional(),
 });
 export const passwordChangeSchema = z.object({
@@ -413,6 +417,50 @@ export const lotSchema = z.object({
 
 export const loginSchema = z.object({ email: z.string().trim().min(3), password: z.string().min(1) });
 export const setupSchema = userCreateSchema.omit({ role: true, party: true }).extend({ party: z.enum(["A", "B"]).default("A") });
+
+// ---------------------------------------------------------------- Perfumes (revenda)
+
+const optCount = z.preprocess(emptyToNull, z.coerce.number().int().min(0).max(1_000_000).nullable()).optional();
+const qtyPositive = z.coerce.number().int().positive("Quantidade deve ser maior que zero").max(1_000_000);
+
+export const perfumeCreateSchema = z.object({
+  clientRef,
+  name: z.string().trim().min(1, "Informe o nome").max(80),
+  costCents: optCount, // custo em centavos (default 1300)
+  priceCents: optCount, // preço em centavos (default 3000)
+  stock: optCount,
+  active: z.boolean().optional(),
+});
+export const perfumeUpdateSchema = perfumeCreateSchema.omit({ clientRef: true }).partial();
+
+/** Registrar venda: baixa estoque e entra no caixa. `unitCents` = preço de venda. */
+export const perfumeSaleSchema = z.object({
+  clientRef,
+  perfumeId: z.coerce.number().int().positive("Escolha o perfume"),
+  qty: qtyPositive,
+  unitCents: cents,
+  date: isoDate,
+  soldByUserId: optInt,
+  notes: optText(200),
+});
+
+/** Registrar compra/reposição: entra estoque e sai do caixa. `unitCents` = custo. */
+export const perfumeRestockSchema = z.object({
+  clientRef,
+  perfumeId: z.coerce.number().int().positive("Escolha o perfume"),
+  qty: qtyPositive,
+  unitCents: cents,
+  date: isoDate,
+  notes: optText(200),
+});
+
+/** Ajuste manual de estoque (recontagem): define o novo saldo. */
+export const perfumeAdjustSchema = z.object({
+  perfumeId: z.coerce.number().int().positive(),
+  stock: z.coerce.number().int().min(0).max(1_000_000),
+  date: isoDate,
+  notes: optText(200),
+});
 
 // ---------------------------------------------------------------- Recontagem
 
